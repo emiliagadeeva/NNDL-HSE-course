@@ -30,13 +30,11 @@ async function loadData() {
     statusDiv.innerHTML = 'Loading data...';
     
     try {
-        // Load training data
-        const trainText = await readFile(trainFile);
-        trainData = parseCSV(trainText);
+        // Load training data using Papa Parse
+        trainData = await parseCSVWithPapa(trainFile);
         
-        // Load test data
-        const testText = await readFile(testFile);
-        testData = parseCSV(testText);
+        // Load test data using Papa Parse
+        testData = await parseCSVWithPapa(testFile);
         
         statusDiv.innerHTML = `Data loaded successfully! Training: ${trainData.length} samples, Test: ${testData.length} samples`;
         
@@ -48,7 +46,37 @@ async function loadData() {
     }
 }
 
-// Read file as text
+// Parse CSV file using Papa Parse
+function parseCSVWithPapa(file) {
+    return new Promise((resolve, reject) => {
+        Papa.parse(file, {
+            header: true,
+            dynamicTyping: true, // Автоматическое преобразование типов
+            skipEmptyLines: true,
+            complete: function(results) {
+                // Обрабатываем пустые значения
+                const processedData = results.data.map(row => {
+                    const processedRow = {};
+                    for (const key in row) {
+                        // Заменяем пустые строки, null, undefined на null
+                        if (row[key] === '' || row[key] === null || row[key] === undefined) {
+                            processedRow[key] = null;
+                        } else {
+                            processedRow[key] = row[key];
+                        }
+                    }
+                    return processedRow;
+                });
+                resolve(processedData);
+            },
+            error: function(error) {
+                reject(error);
+            }
+        });
+    });
+}
+
+// Read file as text (теперь не используется для парсинга, но оставим на всякий случай)
 function readFile(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -58,76 +86,19 @@ function readFile(file) {
     });
 }
 
-// Helper function to parse a CSV line, handling quoted fields
-function parseCSVLine(line) {
-    const result = [];
-    let inQuotes = false;
-    let currentField = '';
-    
-    for (let i = 0; i < line.length; i++) {
-        const char = line[i];
-        
-        if (char === '"') {
-            inQuotes = !inQuotes;
-        } else if (char === ',' && !inQuotes) {
-            result.push(currentField);
-            currentField = '';
-        } else {
-            currentField += char;
-        }
-    }
-    
-    // Push the last field
-    result.push(currentField);
-    
-    return result.map(field => field.trim());
-}
-
-// Parse CSV text to array of objects
-function parseCSV(csvText) {
-    const lines = csvText.split('\n').filter(line => line.trim() !== '');
-    if (lines.length === 0) return [];
-    
-    // Parse headers first
-    const headers = parseCSVLine(lines[0]);
-    
-    return lines.slice(1).map(line => {
-        const values = parseCSVLine(line);
-        const obj = {};
-        
-        headers.forEach((header, i) => {
-            // Handle missing values (empty strings or null)
-            let value = values[i] !== undefined ? values[i] : null;
-            
-            if (value === '' || value === null || value === 'NULL') {
-                obj[header] = null;
-            } else {
-                // Remove quotes if present
-                if (value.startsWith('"') && value.endsWith('"')) {
-                    value = value.substring(1, value.length - 1);
-                }
-                
-                // Convert numerical values to numbers if possible
-                if (!isNaN(value) && value !== '') {
-                    obj[header] = parseFloat(value);
-                } else {
-                    obj[header] = value;
-                }
-            }
-        });
-        return obj;
-    });
-}
-
 // Create a preview table from data
 function createPreviewTable(data) {
     const table = document.createElement('table');
+    table.style.border = '1px solid black';
+    table.style.borderCollapse = 'collapse';
     
     // Create header row
     const headerRow = document.createElement('tr');
     Object.keys(data[0]).forEach(key => {
         const th = document.createElement('th');
         th.textContent = key;
+        th.style.border = '1px solid black';
+        th.style.padding = '5px';
         headerRow.appendChild(th);
     });
     table.appendChild(headerRow);
@@ -138,6 +109,8 @@ function createPreviewTable(data) {
         Object.values(row).forEach(value => {
             const td = document.createElement('td');
             td.textContent = value !== null ? value : 'NULL';
+            td.style.border = '1px solid black';
+            td.style.padding = '3px';
             tr.appendChild(td);
         });
         table.appendChild(tr);
@@ -152,6 +125,8 @@ function inspectData() {
         alert('Please load data first.');
         return;
     }
+    
+    console.log('First row of trainData:', trainData[0]);
     
     // Show data preview
     const previewDiv = document.getElementById('data-preview');
@@ -193,7 +168,7 @@ function createVisualizations() {
     // Survival by Sex
     const survivalBySex = {};
     trainData.forEach(row => {
-        if (row.Sex && row.Survived !== undefined) {
+        if (row.Sex && row.Survived !== undefined && row.Survived !== null) {
             if (!survivalBySex[row.Sex]) {
                 survivalBySex[row.Sex] = { survived: 0, total: 0 };
             }
@@ -218,7 +193,7 @@ function createVisualizations() {
     // Survival by Pclass
     const survivalByPclass = {};
     trainData.forEach(row => {
-        if (row.Pclass !== undefined && row.Survived !== undefined) {
+        if (row.Pclass !== undefined && row.Pclass !== null && row.Survived !== undefined && row.Survived !== null) {
             if (!survivalByPclass[row.Pclass]) {
                 survivalByPclass[row.Pclass] = { survived: 0, total: 0 };
             }
@@ -245,7 +220,7 @@ function createVisualizations() {
 
 // Calculate median of an array
 function calculateMedian(values) {
-    const validValues = values.filter(v => v !== null);
+    const validValues = values.filter(v => v !== null && v !== undefined);
     if (validValues.length === 0) return 0;
     
     validValues.sort((a, b) => a - b);
@@ -260,7 +235,7 @@ function calculateMedian(values) {
 
 // Calculate mode of an array
 function calculateMode(values) {
-    const validValues = values.filter(v => v !== null);
+    const validValues = values.filter(v => v !== null && v !== undefined);
     if (validValues.length === 0) return null;
     
     const frequency = {};
@@ -281,7 +256,7 @@ function calculateMode(values) {
 // Calculate standard deviation of an array
 function calculateStdDev(values) {
     // Filter out null values first
-    const validValues = values.filter(v => v !== null);
+    const validValues = values.filter(v => v !== null && v !== undefined);
     if (validValues.length === 0) return 0;
     
     const mean = validValues.reduce((sum, val) => sum + val, 0) / validValues.length;
@@ -300,39 +275,43 @@ function oneHotEncode(value, categories) {
     return encoding;
 }
 
-// Helper function to parse numeric values safely
-function parseNumeric(value) {
-    if (value === null || value === undefined) return null;
-    if (typeof value === 'number') return value;
-    if (typeof value === 'string') {
-        const parsed = parseFloat(value);
-        return isNaN(parsed) ? null : parsed;
-    }
-    return null;
-}
-
 // Extract features from a row with imputation and normalization
 function extractFeatures(row, ageMedian, fareMedian, embarkedMode) {
+    // Helper function to safely get numeric values
+    const getNumeric = (field) => {
+        const value = row[field];
+        return (value !== null && value !== undefined) ? value : null;
+    };
+
+    // Helper function to safely get string values
+    const getString = (field) => {
+        const value = row[field];
+        return (value !== null && value !== undefined) ? value.toString() : null;
+    };
+
     // Impute missing values
-    const age = parseNumeric(row.Age) !== null ? parseNumeric(row.Age) : ageMedian;
-    const fare = parseNumeric(row.Fare) !== null ? parseNumeric(row.Fare) : fareMedian;
-    const embarked = row.Embarked !== null ? row.Embarked : embarkedMode;
+    const age = getNumeric('Age') !== null ? getNumeric('Age') : ageMedian;
+    const fare = getNumeric('Fare') !== null ? getNumeric('Fare') : fareMedian;
+    const embarked = getString('Embarked') !== null ? getString('Embarked') : embarkedMode;
     
     // Standardize numerical features
-    const standardizedAge = (age - ageMedian) / (calculateStdDev(trainData.map(r => parseNumeric(r.Age)).filter(a => a !== null)) || 1);
-    const standardizedFare = (fare - fareMedian) / (calculateStdDev(trainData.map(r => parseNumeric(r.Fare)).filter(f => f !== null)) || 1);
+    const ageStdDev = calculateStdDev(trainData.map(r => r.Age).filter(a => a !== null && a !== undefined));
+    const fareStdDev = calculateStdDev(trainData.map(r => r.Fare).filter(f => f !== null && f !== undefined));
+    
+    const standardizedAge = (age - ageMedian) / (ageStdDev || 1);
+    const standardizedFare = (fare - fareMedian) / (fareStdDev || 1);
     
     // One-hot encode categorical features
-    const pclassOneHot = oneHotEncode(parseNumeric(row.Pclass), [1, 2, 3]); // Pclass values: 1, 2, 3
-    const sexOneHot = oneHotEncode(row.Sex, ['male', 'female']);
+    const pclassOneHot = oneHotEncode(getNumeric('Pclass'), [1, 2, 3]);
+    const sexOneHot = oneHotEncode(getString('Sex'), ['male', 'female']);
     const embarkedOneHot = oneHotEncode(embarked, ['C', 'Q', 'S']);
     
     // Start with numerical features
     let features = [
         standardizedAge,
         standardizedFare,
-        parseNumeric(row.SibSp) || 0,
-        parseNumeric(row.Parch) || 0
+        getNumeric('SibSp') || 0,
+        getNumeric('Parch') || 0
     ];
     
     // Add one-hot encoded features
@@ -340,7 +319,7 @@ function extractFeatures(row, ageMedian, fareMedian, embarkedMode) {
     
     // Add optional family features if enabled
     if (document.getElementById('add-family-features').checked) {
-        const familySize = (parseNumeric(row.SibSp) || 0) + (parseNumeric(row.Parch) || 0) + 1;
+        const familySize = (getNumeric('SibSp') || 0) + (getNumeric('Parch') || 0) + 1;
         const isAlone = familySize === 1 ? 1 : 0;
         features.push(familySize, isAlone);
     }
@@ -360,9 +339,11 @@ function preprocessData() {
     
     try {
         // Calculate imputation values from training data
-        const ageMedian = calculateMedian(trainData.map(row => parseNumeric(row.Age)));
-        const fareMedian = calculateMedian(trainData.map(row => parseNumeric(row.Fare)));
-        const embarkedMode = calculateMode(trainData.map(row => row.Embarked).filter(e => e !== null));
+        const ageMedian = calculateMedian(trainData.map(row => row.Age));
+        const fareMedian = calculateMedian(trainData.map(row => row.Fare));
+        const embarkedMode = calculateMode(trainData.map(row => row.Embarked));
+        
+        console.log('Imputation values:', { ageMedian, fareMedian, embarkedMode });
         
         // Preprocess training data
         preprocessedTrainData = {
@@ -388,6 +369,9 @@ function preprocessData() {
             preprocessedTestData.passengerIds.push(row[ID_FEATURE]);
         });
         
+        console.log('First preprocessed features:', preprocessedTrainData.features[0]);
+        console.log('First preprocessed label:', preprocessedTrainData.labels[0]);
+        
         // Convert to tensors
         preprocessedTrainData.features = tf.tensor2d(preprocessedTrainData.features);
         preprocessedTrainData.labels = tf.tensor1d(preprocessedTrainData.labels);
@@ -397,6 +381,7 @@ function preprocessData() {
             <p>Training features shape: ${preprocessedTrainData.features.shape}</p>
             <p>Training labels shape: ${preprocessedTrainData.labels.shape}</p>
             <p>Test features shape: [${preprocessedTestData.features.length}, ${preprocessedTestData.features[0] ? preprocessedTestData.features[0].length : 0}]</p>
+            <p>First feature vector: ${JSON.stringify(preprocessedTrainData.features.arraySync()[0])}</p>
         `;
         
         // Enable the create model button
@@ -406,6 +391,9 @@ function preprocessData() {
         console.error(error);
     }
 }
+
+// Остальные функции (createModel, trainModel, updateMetrics, plotROC, predict, createPredictionTable, exportResults)
+// остаются без изменений, как в вашем оригинальном коде
 
 // Create the model
 function createModel() {
@@ -484,14 +472,10 @@ async function trainModel() {
             epochs: 50,
             batchSize: 32,
             validationData: [valFeatures, valLabels],
-            callbacks: tfvis.show.fitCallbacks(
-                { name: 'Training Performance' },
-                ['loss', 'acc', 'val_loss', 'val_acc'],
-                { callbacks: ['onEpochEnd'] }
-            ),
             callbacks: {
                 onEpochEnd: (epoch, logs) => {
                     statusDiv.innerHTML = `Epoch ${epoch + 1}/50 - loss: ${logs.loss.toFixed(4)}, acc: ${logs.acc.toFixed(4)}, val_loss: ${logs.val_loss.toFixed(4)}, val_acc: ${logs.val_acc.toFixed(4)}`;
+                    console.log(`Epoch ${epoch + 1}`, logs);
                 }
             }
         });
@@ -542,10 +526,10 @@ async function updateMetrics() {
     // Update confusion matrix display
     const cmDiv = document.getElementById('confusion-matrix');
     cmDiv.innerHTML = `
-        <table>
-            <tr><th></th><th>Predicted Positive</th><th>Predicted Negative</th></tr>
-            <tr><th>Actual Positive</th><td>${tp}</td><td>${fn}</td></tr>
-            <tr><th>Actual Negative</th><td>${fp}</td><td>${tn}</td></tr>
+        <table style="border-collapse: collapse; border: 1px solid black;">
+            <tr><th style="border: 1px solid black; padding: 5px;"></th><th style="border: 1px solid black; padding: 5px;">Predicted Positive</th><th style="border: 1px solid black; padding: 5px;">Predicted Negative</th></tr>
+            <tr><th style="border: 1px solid black; padding: 5px;">Actual Positive</th><td style="border: 1px solid black; padding: 5px; text-align: center;">${tp}</td><td style="border: 1px solid black; padding: 5px; text-align: center;">${fn}</td></tr>
+            <tr><th style="border: 1px solid black; padding: 5px;">Actual Negative</th><td style="border: 1px solid black; padding: 5px; text-align: center;">${fp}</td><td style="border: 1px solid black; padding: 5px; text-align: center;">${tn}</td></tr>
         </table>
     `;
     
@@ -662,12 +646,16 @@ async function predict() {
 // Create prediction table
 function createPredictionTable(data) {
     const table = document.createElement('table');
+    table.style.border = '1px solid black';
+    table.style.borderCollapse = 'collapse';
     
     // Create header row
     const headerRow = document.createElement('tr');
     ['PassengerId', 'Survived', 'Probability'].forEach(header => {
         const th = document.createElement('th');
         th.textContent = header;
+        th.style.border = '1px solid black';
+        th.style.padding = '5px';
         headerRow.appendChild(th);
     });
     table.appendChild(headerRow);
@@ -678,6 +666,8 @@ function createPredictionTable(data) {
         ['PassengerId', 'Survived', 'Probability'].forEach(key => {
             const td = document.createElement('td');
             td.textContent = key === 'Probability' ? row[key].toFixed(4) : row[key];
+            td.style.border = '1px solid black';
+            td.style.padding = '3px';
             tr.appendChild(td);
         });
         table.appendChild(tr);
