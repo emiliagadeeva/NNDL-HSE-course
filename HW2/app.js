@@ -58,25 +58,92 @@ function readFile(file) {
     });
 }
 
+// Helper function to parse a CSV line, handling quoted fields
+function parseCSVLine(line) {
+    const result = [];
+    let inQuotes = false;
+    let currentField = '';
+    
+    for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        
+        if (char === '"') {
+            inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+            result.push(currentField);
+            currentField = '';
+        } else {
+            currentField += char;
+        }
+    }
+    
+    // Push the last field
+    result.push(currentField);
+    
+    return result.map(field => field.trim());
+}
+
 // Parse CSV text to array of objects
 function parseCSV(csvText) {
     const lines = csvText.split('\n').filter(line => line.trim() !== '');
-    const headers = lines[0].split(',').map(header => header.trim());
+    if (lines.length === 0) return [];
+    
+    // Parse headers first
+    const headers = parseCSVLine(lines[0]);
     
     return lines.slice(1).map(line => {
-        const values = line.split(',').map(value => value.trim());
+        const values = parseCSVLine(line);
         const obj = {};
+        
         headers.forEach((header, i) => {
-            // Handle missing values (empty strings)
-            obj[header] = values[i] === '' ? null : values[i];
+            // Handle missing values (empty strings or null)
+            let value = values[i] !== undefined ? values[i] : null;
             
-            // Convert numerical values to numbers if possible
-            if (!isNaN(obj[header]) && obj[header] !== null) {
-                obj[header] = parseFloat(obj[header]);
+            if (value === '' || value === null || value === 'NULL') {
+                obj[header] = null;
+            } else {
+                // Remove quotes if present
+                if (value.startsWith('"') && value.endsWith('"')) {
+                    value = value.substring(1, value.length - 1);
+                }
+                
+                // Convert numerical values to numbers if possible
+                if (!isNaN(value) && value !== '') {
+                    obj[header] = parseFloat(value);
+                } else {
+                    obj[header] = value;
+                }
             }
         });
         return obj;
     });
+}
+
+// Create a preview table from data
+function createPreviewTable(data) {
+    const table = document.createElement('table');
+    
+    // Create header row
+    const headerRow = document.createElement('tr');
+    Object.keys(data[0]).forEach(key => {
+        const th = document.createElement('th');
+        th.textContent = key;
+        headerRow.appendChild(th);
+    });
+    table.appendChild(headerRow);
+    
+    // Create data rows
+    data.forEach(row => {
+        const tr = document.createElement('tr');
+        Object.values(row).forEach(value => {
+            const td = document.createElement('td');
+            td.textContent = value !== null ? value : 'NULL';
+            tr.appendChild(td);
+        });
+        table.appendChild(tr);
+    });
+    
+    return table;
 }
 
 // Inspect the loaded data
@@ -116,33 +183,6 @@ function inspectData() {
     
     // Enable the preprocess button
     document.getElementById('preprocess-btn').disabled = false;
-}
-
-// Create a preview table from data
-function createPreviewTable(data) {
-    const table = document.createElement('table');
-    
-    // Create header row
-    const headerRow = document.createElement('tr');
-    Object.keys(data[0]).forEach(key => {
-        const th = document.createElement('th');
-        th.textContent = key;
-        headerRow.appendChild(th);
-    });
-    table.appendChild(headerRow);
-    
-    // Create data rows
-    data.forEach(row => {
-        const tr = document.createElement('tr');
-        Object.values(row).forEach(value => {
-            const td = document.createElement('td');
-            td.textContent = value !== null ? value : 'NULL';
-            tr.appendChild(td);
-        });
-        table.appendChild(tr);
-    });
-    
-    return table;
 }
 
 // Create visualizations using tfjs-vis
@@ -203,6 +243,111 @@ function createVisualizations() {
     chartsDiv.innerHTML += '<p>Charts are displayed in the tfjs-vis visor. Click the button in the bottom right to view.</p>';
 }
 
+// Calculate median of an array
+function calculateMedian(values) {
+    const validValues = values.filter(v => v !== null);
+    if (validValues.length === 0) return 0;
+    
+    validValues.sort((a, b) => a - b);
+    const half = Math.floor(validValues.length / 2);
+    
+    if (validValues.length % 2 === 0) {
+        return (validValues[half - 1] + validValues[half]) / 2;
+    }
+    
+    return validValues[half];
+}
+
+// Calculate mode of an array
+function calculateMode(values) {
+    const validValues = values.filter(v => v !== null);
+    if (validValues.length === 0) return null;
+    
+    const frequency = {};
+    let maxCount = 0;
+    let mode = null;
+    
+    validValues.forEach(value => {
+        frequency[value] = (frequency[value] || 0) + 1;
+        if (frequency[value] > maxCount) {
+            maxCount = frequency[value];
+            mode = value;
+        }
+    });
+    
+    return mode;
+}
+
+// Calculate standard deviation of an array
+function calculateStdDev(values) {
+    // Filter out null values first
+    const validValues = values.filter(v => v !== null);
+    if (validValues.length === 0) return 0;
+    
+    const mean = validValues.reduce((sum, val) => sum + val, 0) / validValues.length;
+    const squaredDiffs = validValues.map(value => Math.pow(value - mean, 2));
+    const variance = squaredDiffs.reduce((sum, val) => sum + val, 0) / validValues.length;
+    return Math.sqrt(variance);
+}
+
+// One-hot encode a value
+function oneHotEncode(value, categories) {
+    const encoding = new Array(categories.length).fill(0);
+    const index = categories.indexOf(value);
+    if (index !== -1) {
+        encoding[index] = 1;
+    }
+    return encoding;
+}
+
+// Helper function to parse numeric values safely
+function parseNumeric(value) {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'number') return value;
+    if (typeof value === 'string') {
+        const parsed = parseFloat(value);
+        return isNaN(parsed) ? null : parsed;
+    }
+    return null;
+}
+
+// Extract features from a row with imputation and normalization
+function extractFeatures(row, ageMedian, fareMedian, embarkedMode) {
+    // Impute missing values
+    const age = parseNumeric(row.Age) !== null ? parseNumeric(row.Age) : ageMedian;
+    const fare = parseNumeric(row.Fare) !== null ? parseNumeric(row.Fare) : fareMedian;
+    const embarked = row.Embarked !== null ? row.Embarked : embarkedMode;
+    
+    // Standardize numerical features
+    const standardizedAge = (age - ageMedian) / (calculateStdDev(trainData.map(r => parseNumeric(r.Age)).filter(a => a !== null)) || 1);
+    const standardizedFare = (fare - fareMedian) / (calculateStdDev(trainData.map(r => parseNumeric(r.Fare)).filter(f => f !== null)) || 1);
+    
+    // One-hot encode categorical features
+    const pclassOneHot = oneHotEncode(parseNumeric(row.Pclass), [1, 2, 3]); // Pclass values: 1, 2, 3
+    const sexOneHot = oneHotEncode(row.Sex, ['male', 'female']);
+    const embarkedOneHot = oneHotEncode(embarked, ['C', 'Q', 'S']);
+    
+    // Start with numerical features
+    let features = [
+        standardizedAge,
+        standardizedFare,
+        parseNumeric(row.SibSp) || 0,
+        parseNumeric(row.Parch) || 0
+    ];
+    
+    // Add one-hot encoded features
+    features = features.concat(pclassOneHot, sexOneHot, embarkedOneHot);
+    
+    // Add optional family features if enabled
+    if (document.getElementById('add-family-features').checked) {
+        const familySize = (parseNumeric(row.SibSp) || 0) + (parseNumeric(row.Parch) || 0) + 1;
+        const isAlone = familySize === 1 ? 1 : 0;
+        features.push(familySize, isAlone);
+    }
+    
+    return features;
+}
+
 // Preprocess the data
 function preprocessData() {
     if (!trainData || !testData) {
@@ -215,8 +360,8 @@ function preprocessData() {
     
     try {
         // Calculate imputation values from training data
-        const ageMedian = calculateMedian(trainData.map(row => row.Age).filter(age => age !== null));
-        const fareMedian = calculateMedian(trainData.map(row => row.Fare).filter(fare => fare !== null));
+        const ageMedian = calculateMedian(trainData.map(row => parseNumeric(row.Age)));
+        const fareMedian = calculateMedian(trainData.map(row => parseNumeric(row.Fare)));
         const embarkedMode = calculateMode(trainData.map(row => row.Embarked).filter(e => e !== null));
         
         // Preprocess training data
@@ -260,96 +405,6 @@ function preprocessData() {
         outputDiv.innerHTML = `Error during preprocessing: ${error.message}`;
         console.error(error);
     }
-}
-
-// Extract features from a row with imputation and normalization
-function extractFeatures(row, ageMedian, fareMedian, embarkedMode) {
-    // Impute missing values
-    const age = row.Age !== null ? row.Age : ageMedian;
-    const fare = row.Fare !== null ? row.Fare : fareMedian;
-    const embarked = row.Embarked !== null ? row.Embarked : embarkedMode;
-    
-    // Standardize numerical features
-    const standardizedAge = (age - ageMedian) / (calculateStdDev(trainData.map(r => r.Age).filter(a => a !== null)) || 1);
-    const standardizedFare = (fare - fareMedian) / (calculateStdDev(trainData.map(r => r.Fare).filter(f => f !== null)) || 1);
-    
-    // One-hot encode categorical features
-    const pclassOneHot = oneHotEncode(row.Pclass, [1, 2, 3]); // Pclass values: 1, 2, 3
-    const sexOneHot = oneHotEncode(row.Sex, ['male', 'female']);
-    const embarkedOneHot = oneHotEncode(embarked, ['C', 'Q', 'S']);
-    
-    // Start with numerical features
-    let features = [
-        standardizedAge,
-        standardizedFare,
-        row.SibSp || 0,
-        row.Parch || 0
-    ];
-    
-    // Add one-hot encoded features
-    features = features.concat(pclassOneHot, sexOneHot, embarkedOneHot);
-    
-    // Add optional family features if enabled
-    if (document.getElementById('add-family-features').checked) {
-        const familySize = (row.SibSp || 0) + (row.Parch || 0) + 1;
-        const isAlone = familySize === 1 ? 1 : 0;
-        features.push(familySize, isAlone);
-    }
-    
-    return features;
-}
-
-// Calculate median of an array
-function calculateMedian(values) {
-    if (values.length === 0) return 0;
-    
-    values.sort((a, b) => a - b);
-    const half = Math.floor(values.length / 2);
-    
-    if (values.length % 2 === 0) {
-        return (values[half - 1] + values[half]) / 2;
-    }
-    
-    return values[half];
-}
-
-// Calculate mode of an array
-function calculateMode(values) {
-    if (values.length === 0) return null;
-    
-    const frequency = {};
-    let maxCount = 0;
-    let mode = null;
-    
-    values.forEach(value => {
-        frequency[value] = (frequency[value] || 0) + 1;
-        if (frequency[value] > maxCount) {
-            maxCount = frequency[value];
-            mode = value;
-        }
-    });
-    
-    return mode;
-}
-
-// Calculate standard deviation of an array
-function calculateStdDev(values) {
-    if (values.length === 0) return 0;
-    
-    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
-    const squaredDiffs = values.map(value => Math.pow(value - mean, 2));
-    const variance = squaredDiffs.reduce((sum, val) => sum + val, 0) / values.length;
-    return Math.sqrt(variance);
-}
-
-// One-hot encode a value
-function oneHotEncode(value, categories) {
-    const encoding = new Array(categories.length).fill(0);
-    const index = categories.indexOf(value);
-    if (index !== -1) {
-        encoding[index] = 1;
-    }
-    return encoding;
 }
 
 // Create the model
