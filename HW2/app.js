@@ -684,6 +684,7 @@ function createPredictionTable(data) {
     return table;
 }
 
+
 // Export results
 async function exportResults() {
     if (!testPredictions || !preprocessedTestData) {
@@ -701,13 +702,17 @@ async function exportResults() {
         // Create submission CSV (PassengerId, Survived)
         let submissionCSV = 'PassengerId,Survived\n';
         preprocessedTestData.passengerIds.forEach((id, i) => {
-            submissionCSV += `${id},${predValues[i] >= 0.5 ? 1 : 0}\n`;
+            const prob = predValues[i];
+            const survived = (typeof prob === 'number' ? prob : parseFloat(prob)) >= 0.5 ? 1 : 0;
+            submissionCSV += `${id},${survived}\n`;
         });
         
         // Create probabilities CSV (PassengerId, Probability)
         let probabilitiesCSV = 'PassengerId,Probability\n';
         preprocessedTestData.passengerIds.forEach((id, i) => {
-            probabilitiesCSV += `${id},${predValues[i].toFixed(6)}\n`;
+            const prob = predValues[i];
+            const probability = typeof prob === 'number' ? prob : parseFloat(prob);
+            probabilitiesCSV += `${id},${!isNaN(probability) ? probability.toFixed(6) : '0.000000'}\n`;
         });
         
         // Create download links
