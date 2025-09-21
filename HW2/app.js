@@ -605,6 +605,7 @@ async function plotROC(trueLabels, predictions) {
 }
 
 // Predict on test data
+// Predict on test data
 async function predict() {
     if (!model || !preprocessedTestData) {
         alert('Please train model first.');
@@ -622,12 +623,20 @@ async function predict() {
         testPredictions = model.predict(testFeatures);
         const predValues = testPredictions.arraySync();
         
+        console.log('Prediction values sample:', predValues.slice(0, 5)); // Добавьте для отладки
+        
         // Create prediction results
-        const results = preprocessedTestData.passengerIds.map((id, i) => ({
-            PassengerId: id,
-            Survived: predValues[i] >= 0.5 ? 1 : 0,
-            Probability: predValues[i]
-        }));
+        const results = preprocessedTestData.passengerIds.map((id, i) => {
+            const prob = predValues[i];
+            // Убедимся, что probability - число
+            const probability = typeof prob === 'number' ? prob : parseFloat(prob);
+            
+            return {
+                PassengerId: id,
+                Survived: probability >= 0.5 ? 1 : 0,
+                Probability: probability
+            };
+        });
         
         // Show first 10 predictions
         outputDiv.innerHTML = '<h3>Prediction Results (First 10 Rows)</h3>';
@@ -639,10 +648,9 @@ async function predict() {
         document.getElementById('export-btn').disabled = false;
     } catch (error) {
         outputDiv.innerHTML = `Error during prediction: ${error.message}`;
-        console.error(error);
+        console.error('Prediction error details:', error);
     }
 }
-
 // Create prediction table
 function createPredictionTable(data) {
     const table = document.createElement('table');
