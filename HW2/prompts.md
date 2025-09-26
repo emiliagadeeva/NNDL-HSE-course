@@ -1,4 +1,13 @@
-**We have the following code:**
+## CONTEXT
+When I use current code CSV parser fails to handle quoted fields containing commas (like names with commas inside quotes). This causes data misalignment where names spill into age columns and all subsequent columns shift incorrectly.
+
+## ERRORS TO FIX
+1. **Quoted Field Parsing**: Names like "Cumings, Mrs. John Bradley" break the simple comma splitting
+2. **Data Type Conversion**: Age values become strings when names spill into age column
+
+Your task is to fix this errors in the existing code. 
+
+**The code:**
 
 // Global variables
 let trainData = null;
@@ -690,27 +699,5 @@ async function exportResults() {
 
 
 
-**For some reason, the data was processed incorrectly: part of the name got into the age column, and the values of the remaining columns were replaced with values from others. fix this problem in the code**
-PassengerId	Survived	Pclass	Name	Sex	Age	SibSp	Parch	Ticket	Fare	Cabin	Embarked
-1	0	3	"Braund	Mr. Owen Harris"	male	22	1	0	A/5 21171	7.25	NULL
-2	1	1	"Cumings	Mrs. John Bradley (Florence Briggs Thayer)"	female	38	1	0	PC 17599	71.2833	C85
-3	1	3	"Heikkinen	Miss. Laina"	female	26	0	0	STON/O2. 3101282	7.925	NULL
-4	1	1	"Futrelle	Mrs. Jacques Heath (Lily May Peel)"	female	35	1	0	113803	53.1	C123
-5	0	3	"Allen	Mr. William Henry"	male	35	0	0	373450	8.05	NULL
-6	0	3	"Moran	Mr. James"	male	NULL	0	0	330877	8.4583	NULL
-7	0	1	"McCarthy	Mr. Timothy J"	male	54	0	0	17463	51.8625	E46
-8	0	3	"Palsson	Master. Gosta Leonard"	male	2	3	1	349909	21.075	NULL
-9	1	3	"Johnson	Mrs. Oscar W (Elisabeth Vilhelmina Berg)"	female	27	0	2	347742	11.1333	NULL
-10	1	2	"Nasser	Mrs. Nicholas (Adele Achem)"	female	14	1	0	237736	30.0708	NULL
-
-
-**write all the code taking into account the updates**
-
-
-
 **SECOND PROMPT**
-**The corrections didn't help, suggest another option.**
-
-
-**THIRD PROMPT**
 **I encountered this error: Error during prediction: row[key].toFixed is not a function. highlight locally what changes need to be made and where to fix it.**
