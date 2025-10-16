@@ -1,39 +1,26 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Enhanced Stock Prediction Demo</title>
+    <title>Stock Prediction Demo</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <style>
         body { 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            margin: 0; 
-            padding: 20px; 
+            font-family: Arial, sans-serif; 
+            margin: 20px; 
             background: #f5f5f5;
-            min-height: 100vh;
         }
         .container { 
-            max-width: 1400px; 
+            max-width: 1200px; 
             margin: 0 auto; 
             background: white;
+            padding: 20px;
             border-radius: 10px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            padding: 20px;
         }
         .header {
             text-align: center;
             margin-bottom: 20px;
-            padding-bottom: 20px;
-            border-bottom: 1px solid #eee;
-        }
-        .header h1 {
-            color: #333;
-            margin: 0 0 10px 0;
-            font-size: 2em;
-        }
-        .header p {
-            color: #666;
-            margin: 0;
         }
         .controls { 
             background: #f8f9fa;
@@ -48,66 +35,53 @@
             display: block;
             font-weight: bold;
             margin-bottom: 5px;
-            color: #555;
         }
         .control-group select, 
         .control-group input {
-            width: 100%;
-            max-width: 300px;
-            padding: 8px 12px;
+            padding: 8px;
             border: 1px solid #ddd;
             border-radius: 4px;
-            font-size: 14px;
+            width: 200px;
         }
         .buttons {
             display: flex;
             gap: 10px;
             margin: 20px 0;
-            flex-wrap: wrap;
         }
         button {
             padding: 10px 20px;
             border: none;
             border-radius: 4px;
-            font-size: 14px;
-            font-weight: bold;
             cursor: pointer;
-            transition: background-color 0.3s;
+            font-weight: bold;
         }
         #trainBtn {
             background: #28a745;
             color: white;
         }
-        #trainBtn:hover:not(:disabled) {
-            background: #218838;
+        #trainBtn:disabled {
+            background: #6c757d;
         }
         #predictBtn {
             background: #007bff;
             color: white;
         }
-        #predictBtn:hover:not(:disabled) {
-            background: #0056b3;
-        }
-        button:disabled {
+        #predictBtn:disabled {
             background: #6c757d;
-            cursor: not-allowed;
         }
         .progress {
             margin: 20px 0;
         }
         #status {
-            padding: 12px;
+            padding: 10px;
             background: #e9ecef;
             border-radius: 4px;
             margin: 10px 0;
             font-weight: bold;
-            text-align: center;
-            border-left: 4px solid #007bff;
         }
         progress {
             width: 100%;
             height: 20px;
-            border-radius: 10px;
         }
         .charts { 
             display: grid; 
@@ -119,65 +93,21 @@
             background: white;
             padding: 15px;
             border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .chart-container h3 {
-            margin: 0 0 15px 0;
-            color: #333;
-            font-size: 1.2em;
+            border: 1px solid #ddd;
         }
         .stock-chart {
             margin: 15px 0;
-            padding: 15px;
-            background: #f8f9fa;
-            border-radius: 6px;
-        }
-        .stock-chart h4 {
-            margin: 0 0 10px 0;
-            color: #555;
-        }
-        .prediction-stats {
-            margin-bottom: 10px;
-            font-weight: bold;
-            color: #333;
         }
         canvas {
             max-width: 100%;
-            height: 300px;
-        }
-
-        /* Additional chart containers */
-        #metricsChart, #confusionChart {
-            height: 400px;
-        }
-
-        /* File input styling */
-        #csvFile {
-            padding: 8px;
-            border: 2px dashed #ddd;
-            border-radius: 4px;
-            background: #fafafa;
-        }
-
-        /* Responsive design */
-        @media (max-width: 768px) {
-            .charts {
-                grid-template-columns: 1fr;
-            }
-            .buttons {
-                flex-direction: column;
-            }
-            button {
-                width: 100%;
-            }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>Enhanced Stock Prediction Demo</h1>
-            <p>GRU Neural Network with Technical Indicators</p>
+            <h1>Stock Prediction Demo</h1>
+            <p>GRU Neural Network for Stock Price Prediction</p>
         </div>
         
         <div class="controls">
@@ -187,22 +117,20 @@
             </div>
             
             <div class="control-group">
-                <label for="sequenceLength">Sequence Length (days):</label>
+                <label for="sequenceLength">Sequence Length:</label>
                 <select id="sequenceLength">
                     <option value="10">10 days</option>
-                    <option value="20" selected>20 days</option>
-                    <option value="30">30 days</option>
-                    <option value="50">50 days</option>
+                    <option value="15">15 days</option>
+                    <option value="20">20 days</option>
                 </select>
             </div>
             
             <div class="control-group">
-                <label for="predictionHorizon">Prediction Horizon (days):</label>
+                <label for="predictionHorizon">Prediction Horizon:</label>
                 <select id="predictionHorizon">
                     <option value="1">1 day</option>
                     <option value="2">2 days</option>
-                    <option value="3" selected>3 days</option>
-                    <option value="5">5 days</option>
+                    <option value="3">3 days</option>
                 </select>
             </div>
         </div>
@@ -219,20 +147,20 @@
 
         <div class="charts">
             <div class="chart-container">
-                <h3>Stock Accuracy Ranking</h3>
+                <h3>Stock Accuracy</h3>
                 <canvas id="accuracyChart"></canvas>
             </div>
             <div class="chart-container">
-                <h3>Detailed Metrics</h3>
-                <canvas id="metricsChart"></canvas>
+                <h3>Training History</h3>
+                <canvas id="trainingChart"></canvas>
             </div>
             <div class="chart-container">
-                <h3>Confusion Matrix</h3>
-                <canvas id="confusionChart"></canvas>
-            </div>
-            <div class="chart-container">
-                <h3>Prediction Timeline</h3>
+                <h3>Predictions Timeline</h3>
                 <div id="timelineContainer"></div>
+            </div>
+            <div class="chart-container">
+                <h3>Model Info</h3>
+                <div id="modelInfo"></div>
             </div>
         </div>
     </div>
