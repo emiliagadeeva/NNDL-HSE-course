@@ -9,8 +9,6 @@ class DataLoader {
         this.X_test = null;
         this.y_test = null;
         this.testDates = [];
-        this.featureScalers = {};
-        this.technicalIndicators = {};
     }
 
     async loadCSV(file) {
@@ -59,8 +57,7 @@ class DataLoader {
                 Close: parseFloat(row.Close),
                 High: parseFloat(row.High),
                 Low: parseFloat(row.Low),
-                Volume: parseFloat(row.Volume),
-                AdjClose: parseFloat(row.AdjClose || row.Close)
+                Volume: parseFloat(row.Volume)
             };
         }
 
@@ -71,120 +68,34 @@ class DataLoader {
         console.log(`Loaded ${this.symbols.length} stocks with ${this.dates.length} trading days`);
     }
 
-    calculateTechnicalIndicators() {
-        this.technicalIndicators = {};
-        
-        this.symbols.forEach(symbol => {
-            this.technicalIndicators[symbol] = {};
-            const dates = this.dates;
-            const prices = dates.map(date => this.stocksData[symbol][date].Close);
-            const volumes = dates.map(date => this.stocksData[symbol][date].Volume);
-
-            // SMA (Simple Moving Average)
-            dates.forEach((date, index) => {
-                if (index >= 9) {
-                    const sma = prices.slice(index - 9, index + 1).reduce((a, b) => a + b) / 10;
-                    this.technicalIndicators[symbol][date] = {
-                        ...this.technicalIndicators[symbol][date],
-                        SMA: sma
-                    };
-                }
-            });
-
-            // RSI (Relative Strength Index)
-            dates.forEach((date, index) => {
-                if (index >= 14) {
-                    const gains = [];
-                    const losses = [];
-                    for (let i = index - 13; i <= index; i++) {
-                        const change = prices[i] - prices[i - 1];
-                        gains.push(change > 0 ? change : 0);
-                        losses.push(change < 0 ? -change : 0);
-                    }
-                    const avgGain = gains.reduce((a, b) => a + b) / 14;
-                    const avgLoss = losses.reduce((a, b) => a + b) / 14;
-                    const rs = avgGain / avgLoss;
-                    const rsi = 100 - (100 / (1 + rs));
-                    this.technicalIndicators[symbol][date] = {
-                        ...this.technicalIndicators[symbol][date],
-                        RSI: rsi
-                    };
-                }
-            });
-
-            // Volume SMA
-            dates.forEach((date, index) => {
-                if (index >= 4) {
-                    const volumeSMA = volumes.slice(index - 4, index + 1).reduce((a, b) => a + b) / 5;
-                    this.technicalIndicators[symbol][date] = {
-                        ...this.technicalIndicators[symbol][date],
-                        VolumeSMA: volumeSMA
-                    };
-                }
-            });
-        });
-    }
-
     normalizeData() {
         if (!this.stocksData) throw new Error('No data loaded');
         
-        this.calculateTechnicalIndicators();
         this.normalizedData = {};
-        this.featureScalers = {};
-
-        const allFeatures = ['Open', 'High', 'Low', 'Close', 'Volume', 'SMA', 'RSI', 'VolumeSMA'];
-
-        // Calculate min-max for each feature across all stocks
-        allFeatures.forEach(feature => {
-            this.featureScalers[feature] = { min: Infinity, max: -Infinity };
-        });
-
-        // First pass: find global min-max
-        this.symbols.forEach(symbol => {
-            this.dates.forEach(date => {
-                if (this.stocksData[symbol][date]) {
-                    const point = this.stocksData[symbol][date];
-                    const indicators = this.technicalIndicators[symbol][date] || {};
-                    
-                    ['Open', 'High', 'Low', 'Close', 'Volume'].forEach(feature => {
-                        this.featureScalers[feature].min = Math.min(this.featureScalers[feature].min, point[feature]);
-                        this.featureScalers[feature].max = Math.max(this.featureScalers[feature].max, point[feature]);
-                    });
-
-                    ['SMA', 'RSI', 'VolumeSMA'].forEach(feature => {
-                        if (indicators[feature] !== undefined) {
-                            this.featureScalers[feature].min = Math.min(this.featureScalers[feature].min, indicators[feature]);
-                            this.featureScalers[feature].max = Math.max(this.featureScalers[feature].max, indicators[feature]);
-                        }
-                    });
-                }
-            });
-        });
-
-        // Second pass: normalize data
+        
+        // Normalize each stock independently
         this.symbols.forEach(symbol => {
             this.normalizedData[symbol] = {};
+            
+            // Find min and max for this stock
+            let minClose = Infinity;
+            let maxClose = -Infinity;
+            
             this.dates.forEach(date => {
                 if (this.stocksData[symbol][date]) {
-                    const point = this.stocksData[symbol][date];
-                    const indicators = this.technicalIndicators[symbol][date] || {};
-                    
-                    this.normalizedData[symbol][date] = {};
-                    
-                    // Normalize price and volume data
-                    ['Open', 'High', 'Low', 'Close', 'Volume'].forEach(feature => {
-                        const scaler = this.featureScalers[feature];
-                        this.normalizedData[symbol][date][feature] = 
-                            (point[feature] - scaler.min) / (scaler.max - scaler.min);
-                    });
+                    const close = this.stocksData[symbol][date].Close;
+                    minClose = Math.min(minClose, close);
+                    maxClose = Math.max(maxClose, close);
+                }
+            });
 
-                    // Normalize technical indicators
-                    ['SMA', 'RSI', 'VolumeSMA'].forEach(feature => {
-                        const scaler = this.featureScalers[feature];
-                        const value = indicators[feature] || 0;
-                        this.normalizedData[symbol][date][feature] = 
-                            (value - scaler.min) / (scaler.max - scaler.min);
-                    });
+            // Normalize close prices
+            this.dates.forEach(date => {
+                if (this.stocksData[symbol][date]) {
+                    const close = this.stocksData[symbol][date].Close;
+                    this.normalizedData[symbol][date] = {
+                        Close: (close - minClose) / (maxClose - minClose)
+                    };
                 }
             });
         });
@@ -192,38 +103,30 @@ class DataLoader {
         return this.normalizedData;
     }
 
-    createSequences(sequenceLength = 20, predictionHorizon = 3) {
+    createSequences(sequenceLength = 15, predictionHorizon = 3) {
         if (!this.normalizedData) this.normalizeData();
 
         const sequences = [];
         const targets = [];
         const validDates = [];
 
-        const featureCount = 8; // Open, High, Low, Close, Volume, SMA, RSI, VolumeSMA
+        // Limit number of stocks for performance
+        const maxStocks = Math.min(this.symbols.length, 10);
+        const selectedSymbols = this.symbols.slice(0, maxStocks);
 
         for (let i = sequenceLength; i < this.dates.length - predictionHorizon; i++) {
             const currentDate = this.dates[i];
             const sequenceData = [];
             let validSequence = true;
 
-            // Create sequence for all symbols
+            // Create sequence for all selected symbols
             for (let j = sequenceLength - 1; j >= 0; j--) {
                 const seqDate = this.dates[i - j];
                 const timeStepData = [];
 
-                this.symbols.forEach(symbol => {
+                selectedSymbols.forEach(symbol => {
                     if (this.normalizedData[symbol][seqDate]) {
-                        const features = this.normalizedData[symbol][seqDate];
-                        timeStepData.push(
-                            features.Open,
-                            features.High,
-                            features.Low,
-                            features.Close,
-                            features.Volume,
-                            features.SMA || 0,
-                            features.RSI || 0,
-                            features.VolumeSMA || 0
-                        );
+                        timeStepData.push(this.normalizedData[symbol][seqDate].Close);
                     } else {
                         validSequence = false;
                     }
@@ -235,26 +138,16 @@ class DataLoader {
             // Create target - price movement direction
             if (validSequence) {
                 const target = [];
-                const basePrices = [];
 
-                // Get base prices for comparison
-                this.symbols.forEach(symbol => {
-                    basePrices.push(this.stocksData[symbol][currentDate].Close);
-                });
-
-                // Create targets for prediction horizon
                 for (let offset = 1; offset <= predictionHorizon; offset++) {
                     const futureDate = this.dates[i + offset];
-                    this.symbols.forEach((symbol, idx) => {
-                        if (this.stocksData[symbol][futureDate]) {
+                    selectedSymbols.forEach(symbol => {
+                        if (this.stocksData[symbol][futureDate] && this.stocksData[symbol][currentDate]) {
                             const futureClose = this.stocksData[symbol][futureDate].Close;
-                            // Use 3-class classification: Up, Down, Same
-                            const priceChange = ((futureClose - basePrices[idx]) / basePrices[idx]) * 100;
-                            let direction;
-                            if (priceChange > 1.0) direction = 2; // Strong Up
-                            else if (priceChange < -1.0) direction = 0; // Strong Down
-                            else direction = 1; // Neutral
+                            const currentClose = this.stocksData[symbol][currentDate].Close;
                             
+                            // Binary classification: 1 if price goes up, 0 if down
+                            const direction = futureClose > currentClose ? 1 : 0;
                             target.push(direction);
                         } else {
                             validSequence = false;
@@ -270,18 +163,23 @@ class DataLoader {
             }
         }
 
-        // Split into train/test (chronological split)
-        const splitIndex = Math.floor(sequences.length * 0.8);
-        
-        this.X_train = tf.tensor3d(sequences.slice(0, splitIndex));
-        this.y_train = tf.tensor2d(targets.slice(0, splitIndex));
-        this.X_test = tf.tensor3d(sequences.slice(splitIndex));
-        this.y_test = tf.tensor2d(targets.slice(splitIndex));
-        this.testDates = validDates.slice(splitIndex);
+        // Limit dataset size for performance
+        const maxSequences = Math.min(sequences.length, 1000);
+        const finalSequences = sequences.slice(0, maxSequences);
+        const finalTargets = targets.slice(0, maxSequences);
 
-        console.log(`Created ${sequences.length} sequences`);
-        console.log(`Training: ${this.X_train.shape} sequences`);
-        console.log(`Test: ${this.X_test.shape} sequences`);
+        // Split into train/test (80/20)
+        const splitIndex = Math.floor(finalSequences.length * 0.8);
+        
+        this.X_train = tf.tensor3d(finalSequences.slice(0, splitIndex));
+        this.y_train = tf.tensor2d(finalTargets.slice(0, splitIndex));
+        this.X_test = tf.tensor3d(finalSequences.slice(splitIndex));
+        this.y_test = tf.tensor2d(finalTargets.slice(splitIndex));
+        this.testDates = validDates.slice(splitIndex);
+        this.symbols = selectedSymbols; // Use only selected symbols
+
+        console.log(`Created ${finalSequences.length} sequences`);
+        console.log(`Training: ${this.X_train.shape[0]}, Test: ${this.X_test.shape[0]}`);
         
         return {
             X_train: this.X_train,
