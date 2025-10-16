@@ -4,108 +4,97 @@ class GRUModel {
         this.inputShape = inputShape;
         this.outputSize = outputSize;
         this.history = null;
-        this.classNames = ['Down', 'Neutral', 'Up'];
+        this.trainingHistory = {
+            loss: [],
+            accuracy: [],
+            val_loss: [],
+            val_accuracy: []
+        };
     }
 
     buildModel() {
+        // Simplified architecture for browser performance
         this.model = tf.sequential({
             layers: [
                 tf.layers.gru({
-                    units: 128,
-                    returnSequences: true,
-                    inputShape: this.inputShape,
-                    dropout: 0.3,
-                    recurrentDropout: 0.2
-                }),
-                tf.layers.batchNormalization(),
-                
-                tf.layers.gru({
-                    units: 64,
-                    returnSequences: true,
-                    dropout: 0.3,
-                    recurrentDropout: 0.2
-                }),
-                tf.layers.batchNormalization(),
-                
-                tf.layers.gru({
                     units: 32,
                     returnSequences: false,
-                    dropout: 0.2
-                }),
-                
-                tf.layers.dense({
-                    units: 64,
-                    activation: 'relu'
-                }),
-                tf.layers.dropout({ rate: 0.3 }),
-                
-                tf.layers.dense({
-                    units: 32,
-                    activation: 'relu'
+                    inputShape: this.inputShape
                 }),
                 tf.layers.dropout({ rate: 0.2 }),
                 
                 tf.layers.dense({
+                    units: 16,
+                    activation: 'relu'
+                }),
+                
+                tf.layers.dense({
                     units: this.outputSize,
-                    activation: 'softmax'
+                    activation: 'sigmoid'
                 })
             ]
         });
 
         this.model.compile({
             optimizer: tf.train.adam(0.001),
-            loss: 'sparseCategoricalCrossentropy',
+            loss: 'binaryCrossentropy',
             metrics: ['accuracy']
         });
 
-        console.log('Model architecture:');
-        this.model.summary();
-
+        console.log('Model built successfully');
         return this.model;
     }
 
-    async train(X_train, y_train, X_test, y_test, epochs = 100, batchSize = 32) {
+    async train(X_train, y_train, X_test, y_test, epochs = 20, batchSize = 8) {
         if (!this.model) this.buildModel();
 
-        // Convert y_train and y_test to proper shape for sparse categorical crossentropy
-        const yTrainFlat = y_train.reshape([-1]);
-        const yTestFlat = y_test.reshape([-1]);
+        this.trainingHistory = {
+            loss: [],
+            accuracy: [],
+            val_loss: [],
+            val_accuracy: []
+        };
 
-        this.history = await this.model.fit(X_train, yTrainFlat, {
-            epochs: epochs,
-            batchSize: batchSize,
-            validationData: [X_test, yTestFlat],
-            callbacks: {
-                onEpochEnd: (epoch, logs) => {
-                    const progress = ((epoch + 1) / epochs) * 100;
-                    const status = `Epoch ${epoch + 1}/${epochs} - loss: ${logs.loss.toFixed(4)}, acc: ${logs.acc.toFixed(4)}, val_loss: ${logs.val_loss.toFixed(4)}, val_acc: ${logs.val_acc.toFixed(4)}`;
-                    
-                    // Update UI
-                    const progressElement = document.getElementById('trainingProgress');
-                    const statusElement = document.getElementById('status');
-                    if (progressElement) progressElement.value = progress;
-                    if (statusElement) statusElement.textContent = status;
-                    
-                    console.log(status);
-                    tf.nextFrame();
-                },
-                onTrainEnd: () => {
-                    console.log('Training completed');
+        try {
+            this.history = await this.model.fit(X_train, y_train, {
+                epochs: epochs,
+                batchSize: batchSize,
+                validationData: [X_test, y_test],
+                callbacks: {
+                    onEpochEnd: async (epoch, logs) => {
+                        // Store history for charting
+                        this.trainingHistory.loss.push(logs.loss);
+                        this.trainingHistory.accuracy.push(logs.acc);
+                        this.trainingHistory.val_loss.push(logs.val_loss);
+                        this.trainingHistory.val_accuracy.push(logs.val_acc);
+
+                        const progress = ((epoch + 1) / epochs) * 100;
+                        const status = `Epoch ${epoch + 1}/${epochs} - loss: ${logs.loss.toFixed(4)}, acc: ${logs.acc.toFixed(4)}, val_loss: ${logs.val_loss.toFixed(4)}, val_acc: ${logs.val_acc.toFixed(4)}`;
+                        
+                        // Update UI
+                        const progressElement = document.getElementById('trainingProgress');
+                        const statusElement = document.getElementById('status');
+                        if (progressElement) progressElement.value = progress;
+                        if (statusElement) statusElement.textContent = status;
+                        
+                        console.log(status);
+                        
+                        // Allow UI to update
+                        await tf.nextFrame();
+                    }
                 }
-            }
-        });
+            });
 
-        // Clean up
-        yTrainFlat.dispose();
-        yTestFlat.dispose();
-
-        return this.history;
+            return this.history;
+        } catch (error) {
+            console.error('Training error:', error);
+            throw error;
+        }
     }
 
     async predict(X) {
         if (!this.model) throw new Error('Model not trained');
-        const predictions = this.model.predict(X);
-        return predictions;
+        return this.model.predict(X);
     }
 
     evaluatePerStock(yTrue, yPred, symbols, horizon = 3) {
@@ -113,25 +102,9 @@ class GRUModel {
         const yPredArray = yPred.arraySync();
         const numStocks = symbols.length;
         
-        const stockMetrics = {};
+        const stockAccuracies = {};
         const stockPredictions = {};
-        const confusionMatrices = {};
 
-        // Initialize metrics
-        symbols.forEach(symbol => {
-            stockMetrics[symbol] = {
-                accuracy: 0,
-                precision: [0, 0, 0],
-                recall: [0, 0, 0],
-                f1: [0, 0, 0],
-                totalPredictions: 0,
-                correctPredictions: 0
-            };
-            
-            confusionMatrices[symbol] = Array(3).fill().map(() => Array(3).fill(0));
-        });
-
-        // Calculate metrics per stock
         symbols.forEach((symbol, stockIdx) => {
             let correct = 0;
             let total = 0;
@@ -141,75 +114,28 @@ class GRUModel {
                 for (let offset = 0; offset < horizon; offset++) {
                     const targetIdx = stockIdx * horizon + offset;
                     const trueVal = yTrueArray[i][targetIdx];
-                    const predProbs = yPredArray[i].slice(targetIdx * 3, (targetIdx + 1) * 3);
-                    const predVal = predProbs.indexOf(Math.max(...predProbs));
+                    const predVal = yPredArray[i][targetIdx] > 0.5 ? 1 : 0;
                     
-                    // Update confusion matrix
-                    confusionMatrices[symbol][trueVal][predVal]++;
-                    
-                    if (trueVal === predVal) {
-                        correct++;
-                        stockMetrics[symbol].correctPredictions++;
-                    }
+                    if (trueVal === predVal) correct++;
                     total++;
-                    stockMetrics[symbol].totalPredictions++;
-
+                    
                     predictions.push({
                         true: trueVal,
-                        trueLabel: this.classNames[trueVal],
                         pred: predVal,
-                        predLabel: this.classNames[predVal],
-                        confidence: Math.max(...predProbs),
                         correct: trueVal === predVal
                     });
                 }
             }
 
-            stockMetrics[symbol].accuracy = correct / total;
-            
-            // Calculate precision, recall, F1 for each class
-            for (let classIdx = 0; classIdx < 3; classIdx++) {
-                const tp = confusionMatrices[symbol][classIdx][classIdx];
-                const fp = confusionMatrices[symbol].reduce((sum, row) => sum + row[classIdx], 0) - tp;
-                const fn = confusionMatrices[symbol][classIdx].reduce((sum, val) => sum + val, 0) - tp;
-                
-                const precision = tp + fp > 0 ? tp / (tp + fp) : 0;
-                const recall = tp + fn > 0 ? tp / (tp + fn) : 0;
-                const f1 = precision + recall > 0 ? 2 * precision * recall / (precision + recall) : 0;
-                
-                stockMetrics[symbol].precision[classIdx] = precision;
-                stockMetrics[symbol].recall[classIdx] = recall;
-                stockMetrics[symbol].f1[classIdx] = f1;
-            }
-
+            stockAccuracies[symbol] = correct / total;
             stockPredictions[symbol] = predictions;
         });
 
-        return { 
-            stockMetrics, 
-            stockPredictions, 
-            confusionMatrices,
-            classNames: this.classNames 
-        };
+        return { stockAccuracies, stockPredictions };
     }
 
-    async predictFuture(X_last_sequence, daysAhead = 5) {
-        if (!this.model) throw new Error('Model not trained');
-        
-        const predictions = [];
-        let currentSequence = X_last_sequence.clone();
-        
-        for (let i = 0; i < daysAhead; i++) {
-            const pred = this.model.predict(currentSequence);
-            const predArray = await pred.array();
-            predictions.push(predArray[0]);
-            
-            // Update sequence for next prediction (simplified approach)
-            pred.dispose();
-        }
-        
-        currentSequence.dispose();
-        return predictions;
+    getTrainingHistory() {
+        return this.trainingHistory;
     }
 
     dispose() {
