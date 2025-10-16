@@ -45,7 +45,7 @@ class GRUModel {
         return this.model;
     }
 
-    async train(X_train, y_train, X_test, y_test, epochs = 20, batchSize = 8) {
+    async train(X_train, y_train, X_test, y_test, epochs = 50, batchSize = 32) {
         if (!this.model) this.buildModel();
 
         this.trainingHistory = {
