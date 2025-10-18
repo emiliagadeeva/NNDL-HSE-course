@@ -115,8 +115,15 @@ class DataLoader {
 
         storeIds.forEach(storeId => {
             const storeData = this.getStoreData(storeId);
-            if (storeData.length < windowSize + 3) return;
+            if (storeData.length < windowSize + 3) {
+                console.log(`Skipping store ${storeId}: insufficient data (${storeData.length} records)`);
+                return;
+            }
 
+            // Создаем последовательности для каждого магазина
+            const storeSequences = [];
+            const storeTargets = [];
+            
             for (let i = 0; i < storeData.length - windowSize - 2; i++) {
                 const sequence = [];
                 for (let j = 0; j < windowSize; j++) {
@@ -133,30 +140,67 @@ class DataLoader {
                     sequence.push(features);
                 }
                 
-                // Target: next 3 weeks of sales (также нормализованные)
                 const target = [
                     storeData[i + windowSize].Weekly_Sales / 1000000,
                     storeData[i + windowSize + 1].Weekly_Sales / 1000000,
                     storeData[i + windowSize + 2].Weekly_Sales / 1000000
                 ];
 
-                sequences.push(sequence);
-                targets.push(target);
-                storeIndices.push(storeId);
+                storeSequences.push(sequence);
+                storeTargets.push(target);
             }
+
+            // Добавляем все последовательности магазина с его ID
+            sequences.push(...storeSequences);
+            targets.push(...storeTargets);
+            storeIndices.push(...Array(storeSequences.length).fill(storeId));
         });
 
-        const splitIndex = Math.floor(sequences.length * testSplit);
+        if (sequences.length === 0) {
+            throw new Error('No sequences generated. Check if stores have enough data.');
+        }
+
+        // 🔥 ПЕРЕМЕШИВАНИЕ: Перемешиваем данные перед разделением
+        const shuffled = this.shuffleArrays(sequences, targets, storeIndices);
         
-        console.log(`Generated ${sequences.length} sequences`);
+        const splitIndex = Math.floor(shuffled.sequences.length * testSplit);
+        
+        console.log(`Generated ${shuffled.sequences.length} sequences from ${storeIds.length} stores`);
+        console.log('Store distribution in test set:', this.countStores(shuffled.storeIndices.slice(splitIndex)));
         
         return {
-            trainX: sequences.slice(0, splitIndex),
-            trainY: targets.slice(0, splitIndex),
-            testX: sequences.slice(splitIndex),
-            testY: targets.slice(splitIndex),
-            storeIndices: storeIndices.slice(splitIndex),
+            trainX: shuffled.sequences.slice(0, splitIndex),
+            trainY: shuffled.targets.slice(0, splitIndex),
+            testX: shuffled.sequences.slice(splitIndex),
+            testY: shuffled.targets.slice(splitIndex),
+            storeIndices: shuffled.storeIndices.slice(splitIndex),
             featureNames: this.features
         };
+    }
+
+    // 🔥 НОВЫЙ МЕТОД: Перемешивание данных Fisher-Yates
+    shuffleArrays(sequences, targets, storeIndices) {
+        const indices = Array.from({length: sequences.length}, (_, i) => i);
+        
+        // Fisher-Yates shuffle algorithm
+        for (let i = indices.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [indices[i], indices[j]] = [indices[j], indices[i]];
+        }
+        
+        return {
+            sequences: indices.map(i => sequences[i]),
+            targets: indices.map(i => targets[i]),
+            storeIndices: indices.map(i => storeIndices[i])
+        };
+    }
+
+    // 🔥 НОВЫЙ МЕТОД: Подсчет магазинов в наборе данных
+    countStores(storeIndices) {
+        const count = {};
+        storeIndices.forEach(storeId => {
+            count[storeId] = (count[storeId] || 0) + 1;
+        });
+        return count;
     }
 }
