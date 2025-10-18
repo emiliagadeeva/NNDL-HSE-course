@@ -33,10 +33,12 @@ class SalesForecastingApp {
             e.preventDefault();
             fileUpload.classList.remove('dragover');
             const files = e.dataTransfer.files;
-            if (files.length > 0 && files[0].type === 'text/csv') {
-                this.handleFileUpload(files[0]);
-            } else {
-                alert('Please upload a CSV file');
+            if (files.length > 0) {
+                if (files[0].type === 'text/csv') {
+                    this.handleFileUpload(files[0]);
+                } else {
+                    alert('Please upload a CSV file');
+                }
             }
         });
         
@@ -385,163 +387,7 @@ class SalesForecastingApp {
                 return;
             }
 
-            // Create model
-            const inputShape = [windowSize, this.trainingData.featureNames.length];
-            await this.lstm.createModel(inputShape, lstmLayers, hiddenUnits, learningRate);
-
-            // Show progress
-            document.getElementById('trainingProgress').style.display = 'block';
-            document.getElementById('trainBtn').disabled = true;
-            document.getElementById('testBtn').disabled = true;
-
-            // Reset charts
-            this.lossChart.data.labels = [];
-            this.lossChart.data.datasets[0].data = [];
-            this.lossChart.data.datasets[1].data = [];
-            this.lossChart.update();
-
-            // Train model с валидационными данными
-            await this.lstm.trainModel(
-                this.trainingData.trainX,
-                this.trainingData.trainY,
-                this.trainingData.valX,
-                this.trainingData.valY,
-                epochs,
-                (epoch, totalEpochs, loss, valLoss) => {
-                    const progress = (epoch / totalEpochs) * 100;
-                    document.getElementById('progressFill').style.width = progress + '%';
-                    document.getElementById('progressText').textContent = 
-                        `Epoch: ${epoch}/${totalEpochs} - Loss: ${loss.toFixed(6)} - Val Loss: ${valLoss.toFixed(6)}`;
-                    
-                    // Update loss chart
-                    this.lossChart.data.labels.push(epoch);
-                    this.lossChart.data.datasets[0].data.push(loss);
-                    this.lossChart.data.datasets[1].data.push(valLoss || loss);
-                    this.lossChart.update();
-                }
-            );
-
-            document.getElementById('trainBtn').disabled = false;
-            document.getElementById('testBtn').disabled = false;
-            alert('✅ Model training completed!');
-            
-        } catch (error) {
-            console.error('Training error:', error);
-            alert('❌ Error training model: ' + error.message);
-            document.getElementById('trainBtn').disabled = false;
-            document.getElementById('testBtn').disabled = false;
-        }
-    }
-
-    async testModel() {
-        if (!this.trainingData || !this.lstm.model) {
-            alert('Please train the model first');
-            return;
-        }
-
-        try {
-            document.getElementById('testBtn').disabled = true;
-            document.getElementById('testBtn').textContent = 'Testing...';
-            
-            console.log('Test data info:', {
-                testSamples: this.trainingData.testX.length,
-                storesInTest: [...new Set(this.trainingData.storeIndices)],
-                storeDistribution: this.countStores(this.trainingData.storeIndices)
-            });
-            
-            const predictions = await this.lstm.predict(this.trainingData.testX);
-            this.testResults = await this.lstm.evaluateByStore(
-                predictions,
-                this.trainingData.testY,
-                this.trainingData.storeIndices
-            );
-
-            console.log('Test results stores:', Object.keys(this.testResults));
-            
-            this.updateRMSEChart();
-            document.getElementById('exportBtn').disabled = false;
-            
-            document.getElementById('testBtn').disabled = false;
-            document.getElementById('testBtn').textContent = '🧪 Test Model';
-            
-            alert(`✅ Model testing completed! Evaluated ${Object.keys(this.testResults).length} stores`);
-        } catch (error) {
-            console.error('Testing error:', error);
-            alert('❌ Error testing model: ' + error.message);
-            document.getElementById('testBtn').disabled = false;
-            document.getElementById('testBtn').textContent = '🧪 Test Model';
-        }
-    }
-
-    updateRMSEChart() {
-        if (!this.testResults) return;
-
-        const allStores = Object.entries(this.testResults)
-            .sort(([, a], [, b]) => b.rmse - a.rmse);
-
-        const displayStores = allStores.slice(0, Math.min(10, allStores.length));
-        
-        this.rmseChart.data.labels = displayStores.map(([storeId]) => `Store ${storeId}`);
-        this.rmseChart.data.datasets[0].data = displayStores.map(([, data]) => data.rmse);
-        this.rmseChart.update();
-
-        console.log('All stores in results:', allStores.map(([storeId]) => storeId));
-    }
-
-    updatePredictionChart(storeId) {
-        if (!this.testResults || !storeId || !this.testResults[storeId]) {
-            this.predictionChart.data.datasets[0].data = [];
-            this.predictionChart.data.datasets[1].data = [];
-            this.predictionChart.update();
-            return;
-        }
-
-        const storeData = this.testResults[storeId];
-        
-        if (storeData.actuals.length > 0 && storeData.predictions.length > 0) {
-            const actualSales = storeData.actuals[0].map(val => val * 1000000);
-            const predictedSales = storeData.predictions[0].map(val => val * 1000000);
-            
-            this.predictionChart.data.datasets[0].data = actualSales;
-            this.predictionChart.data.datasets[1].data = predictedSales;
-            this.predictionChart.update();
-        }
-    }
-
-    countStores(storeIndices) {
-        const count = {};
-        storeIndices.forEach(storeId => {
-            count[storeId] = (count[storeId] || 0) + 1;
-        });
-        return count;
-    }
-
-    exportResults() {
-        if (!this.testResults) {
-            alert('No results to export');
-            return;
-        }
-
-        let csvContent = 'Store,RMSE\n';
-        Object.entries(this.testResults).forEach(([storeId, data]) => {
-            csvContent += `${storeId},${data.rmse.toFixed(6)}\n`;
-        });
-
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `sales_forecast_results_${new Date().toISOString().split('T')[0]}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-    }
-}
-
-// Инициализация приложения
-let app;
-document.addEventListener('DOMContentLoaded', () => {
-    app = new SalesForecastingApp();
-    console.log('Sales Forecasting App initialized');
-});
+            // 🔥 ИСПРАВЛЕНИЕ: Проверяем, есть ли validation данные
+            if (this.trainingData.valX.length === 0) {
+                console.warn('No validation data available, using training data for validation');
+                // Если
