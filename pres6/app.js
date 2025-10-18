@@ -1,368 +1,228 @@
-[file name]: app.js
+[file name]: lstm.js
 [file content begin]
-class SalesForecastingApp {
+class LSTMForecaster {
     constructor() {
-        this.dataLoader = new DataLoader();
-        this.lstm = new LSTMForecaster();
-        this.selectedStores = [];
-        this.trainingData = null;
-        this.testResults = null;
-        
-        this.initializeEventListeners();
-        this.initializeCharts();
+        this.model = null;
+        this.isTraining = false;
+        this.trainingHistory = {
+            loss: [],
+            valLoss: []
+        };
     }
 
-    initializeEventListeners() {
-        // File upload - ПРАВИЛЬНАЯ ИНИЦИАЛИЗАЦИЯ
-        const fileUpload = document.getElementById('fileUpload');
-        const fileInput = document.getElementById('fileInput');
+    createModel(inputShape, lstmLayers = 2, hiddenUnits = 32, learningRate = 0.1) {
+        const model = tf.sequential();
         
-        // Обработчики для drag & drop
-        fileUpload.addEventListener('click', () => {
-            fileInput.click();
-        });
+        // First LSTM layer
+        model.add(tf.layers.lstm({
+            units: hiddenUnits,
+            returnSequences: lstmLayers > 1,
+            inputShape: inputShape
+        }));
         
-        fileUpload.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            fileUpload.classList.add('dragover');
-        });
+        // Additional LSTM layers
+        for (let i = 1; i < lstmLayers; i++) {
+            model.add(tf.layers.lstm({
+                units: hiddenUnits,
+                returnSequences: i < lstmLayers - 1
+            }));
+        }
         
-        fileUpload.addEventListener('dragleave', () => {
-            fileUpload.classList.remove('dragover');
-        });
+        // Output layer - 3 units for 3-week forecast
+        model.add(tf.layers.dense({
+            units: 3,
+            activation: 'linear'
+        }));
         
-        fileUpload.addEventListener('drop', (e) => {
-            e.preventDefault();
-            fileUpload.classList.remove('dragover');
-            const files = e.dataTransfer.files;
-            if (files.length > 0 && files[0].type === 'text/csv') {
-                this.handleFileUpload(files[0]);
-            } else {
-                alert('Please upload a CSV file');
-            }
-        });
-        
-        // Обработчик выбора файла
-        fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0 && e.target.files[0].type === 'text/csv') {
-                this.handleFileUpload(e.target.files[0]);
-            } else if (e.target.files.length > 0) {
-                alert('Please upload a CSV file');
-            }
-        });
-
-        // 🔥 ПРАВИЛЬНЫЕ ОБРАБОТЧИКИ СЛАЙДЕРОВ
-        const windowSizeSlider = document.getElementById('windowSize');
-        const trainSplitSlider = document.getElementById('trainSplit');
-        
-        // Слайдер размера окна
-        windowSizeSlider.addEventListener('input', (e) => {
-            document.getElementById('windowSizeValue').textContent = e.target.value;
+        // Компиляция модели с правильными параметрами
+        const optimizer = tf.train.adam(learningRate);
+        model.compile({
+            optimizer: optimizer,
+            loss: 'meanSquaredError',
+            metrics: ['mse']
         });
         
-        // Слайдер разделения train/test
-        trainSplitSlider.addEventListener('input', (e) => {
-            document.getElementById('trainSplitValue').textContent = e.target.value + '%';
-        });
-
-        // Инициализация значений слайдеров
-        document.getElementById('windowSizeValue').textContent = windowSizeSlider.value;
-        document.getElementById('trainSplitValue').textContent = trainSplitSlider.value + '%';
-
-        // Кнопки управления
-        document.getElementById('trainBtn').addEventListener('click', () => this.trainModel());
-        document.getElementById('testBtn').addEventListener('click', () => this.testModel());
-        document.getElementById('exportBtn').addEventListener('click', () => this.exportResults());
+        console.log('Model created successfully');
+        model.summary();
         
-        // Выбор магазина для графика
-        document.getElementById('storeChartSelect').addEventListener('change', (e) => {
-            this.updatePredictionChart(e.target.value);
-        });
-
-        // Выбор магазинов для обучения
-        document.getElementById('storeSelect').addEventListener('change', (e) => {
-            this.updateSelectedStores();
-        });
+        return model;
     }
 
-    initializeCharts() {
-        // Loss chart
-        this.lossChart = new Chart(document.getElementById('lossChart'), {
-            type: 'line',
-            data: {
-                labels: [],
-                datasets: [
-                    {
-                        label: 'Training Loss',
-                        borderColor: '#007bff',
-                        backgroundColor: 'rgba(0, 123, 255, 0.1)',
-                        data: [],
-                        fill: true,
-                        tension: 0.4
-                    },
-                    {
-                        label: 'Validation Loss',
-                        borderColor: '#28a745',
-                        backgroundColor: 'rgba(40, 167, 69, 0.1)',
-                        data: [],
-                        fill: true,
-                        tension: 0.4
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        title: { display: true, text: 'Loss' }
-                    },
-                    x: {
-                        title: { display: true, text: 'Epoch' }
-                    }
-                }
-            }
-        });
+    async train(trainingData, config, onProgress) {
+        if (this.isTraining) {
+            throw new Error('Model is already training');
+        }
 
-        // RMSE chart
-        this.rmseChart = new Chart(document.getElementById('rmseChart'), {
-            type: 'bar',
-            data: {
-                labels: [],
-                datasets: [{
-                    label: 'RMSE',
-                    backgroundColor: '#ff6b6b',
-                    borderColor: '#fa5252',
-                    borderWidth: 1,
-                    data: []
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        title: { display: true, text: 'RMSE' }
-                    },
-                    x: {
-                        title: { display: true, text: 'Store' }
-                    }
-                }
-            }
-        });
-
-        // Prediction chart
-        this.predictionChart = new Chart(document.getElementById('predictionChart'), {
-            type: 'line',
-            data: {
-                labels: ['Week 1', 'Week 2', 'Week 3'],
-                datasets: [
-                    {
-                        label: 'Actual Sales',
-                        borderColor: '#28a745',
-                        backgroundColor: 'rgba(40, 167, 69, 0.1)',
-                        data: [],
-                        borderWidth: 2,
-                        pointRadius: 6,
-                        tension: 0.4
-                    },
-                    {
-                        label: 'Predicted Sales',
-                        borderColor: '#007bff',
-                        backgroundColor: 'rgba(0, 123, 255, 0.1)',
-                        data: [],
-                        borderWidth: 2,
-                        pointRadius: 6,
-                        borderDash: [5, 5],
-                        tension: 0.4
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        title: { display: true, text: 'Sales ($)' },
-                        ticks: {
-                            callback: function(value) {
-                                return '$' + value.toLocaleString();
-                            }
-                        }
-                    }
-                }
-            }
-        });
-
-        // 🔥 НОВЫЕ ГРАФИКИ ДЛЯ EDA
-        this.initializeEDACharts();
-    }
-
-    initializeEDACharts() {
-        // Sales by Store chart
-        this.salesByStoreChart = new Chart(document.getElementById('salesByStoreChart'), {
-            type: 'bar',
-            data: {
-                labels: [],
-                datasets: [{
-                    label: 'Total Sales',
-                    backgroundColor: '#007bff',
-                    borderColor: '#0056b3',
-                    borderWidth: 1,
-                    data: []
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        title: { display: true, text: 'Total Sales ($)' },
-                        ticks: {
-                            callback: function(value) {
-                                return '$' + (value / 1000000).toFixed(1) + 'M';
-                            }
-                        }
-                    },
-                    x: {
-                        title: { display: true, text: 'Store' }
-                    }
-                }
-            }
-        });
-
-        // Sales Distribution chart
-        this.salesDistributionChart = new Chart(document.getElementById('salesDistributionChart'), {
-            type: 'bar',
-            data: {
-                labels: [],
-                datasets: [{
-                    label: 'Frequency',
-                    backgroundColor: '#28a745',
-                    borderColor: '#1e7e34',
-                    borderWidth: 1,
-                    data: []
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        title: { display: true, text: 'Frequency' }
-                    },
-                    x: {
-                        title: { display: true, text: 'Sales Range' }
-                    }
-                }
-            }
-        });
-
-        // Holiday Sales chart
-        this.holidaySalesChart = new Chart(document.getElementById('holidaySalesChart'), {
-            type: 'bar',
-            data: {
-                labels: ['Holiday Weeks', 'Non-Holiday Weeks'],
-                datasets: [{
-                    label: 'Average Sales',
-                    backgroundColor: ['#ff6b6b', '#4ecdc4'],
-                    borderColor: ['#fa5252', '#2b9c94'],
-                    borderWidth: 1,
-                    data: [0, 0]
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        title: { display: true, text: 'Average Sales ($)' },
-                        ticks: {
-                            callback: function(value) {
-                                return '$' + value.toLocaleString();
-                            }
-                        }
-                    }
-                }
-            }
-        });
-
-        // Sales Trend chart
-        this.salesTrendChart = new Chart(document.getElementById('salesTrendChart'), {
-            type: 'line',
-            data: {
-                labels: [],
-                datasets: [{
-                    label: 'Average Monthly Sales',
-                    borderColor: '#6f42c1',
-                    backgroundColor: 'rgba(111, 66, 193, 0.1)',
-                    data: [],
-                    fill: true,
-                    tension: 0.4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        title: { display: true, text: 'Average Sales ($)' },
-                        ticks: {
-                            callback: function(value) {
-                                return '$' + value.toLocaleString();
-                            }
-                        }
-                    },
-                    x: {
-                        title: { display: true, text: 'Month' }
-                    }
-                }
-            }
-        });
-
-        // Correlation chart
-        this.correlationChart = new Chart(document.getElementById('correlationChart'), {
-            type: 'bar',
-            data: {
-                labels: [],
-                datasets: []
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    y: {
-                        min: -1,
-                        max: 1,
-                        title: { display: true, text: 'Correlation Coefficient' }
-                    }
-                },
-                plugins: {
-                    legend: {
-                        display: true
-                    }
-                }
-            }
-        });
-    }
-
-    async handleFileUpload(file) {
+        this.isTraining = true;
+        
         try {
-            console.log('Starting file upload...');
-            document.getElementById('fileUpload').innerHTML = '<p>📊 Loading data...</p>';
+            const { trainX, trainY, testX, testY } = trainingData;
             
-            const data = await this.dataLoader.loadCSV(file);
-            console.log('Data loaded successfully');
+            if (trainX.length === 0 || trainY.length === 0) {
+                throw new Error('No training data available');
+            }
+
+            // Convert to tensors
+            const xs = tf.tensor3d(trainX);
+            const ys = tf.tensor2d(trainY);
             
-            this.showDataPreview();
-            this.populateStoreSelect();
-            this.performEDA(); // 🔥 ВЫЗОВ EDA
+            let valXs, valYs;
+            if (testX.length > 0 && testY.length > 0) {
+                valXs = tf.tensor3d(testX);
+                valYs = tf.tensor2d(testY);
+            }
+
+            console.log(`Training on ${trainX.length} sequences`);
+            console.log(`Input shape: [${trainX.length}, ${trainX[0].length}, ${trainX[0][0].length}]`);
+            console.log(`Output shape: [${trainY.length}, ${trainY[0].length}]`);
+
+            // Create or recreate model
+            const inputShape = [config.windowSize, trainX[0][0].length];
+            if (this.model) {
+                this.model.dispose();
+            }
+            this.model = this.createModel(inputShape, config.lstmLayers, config.hiddenUnits, config.learningRate);
+
+            // Training configuration
+            const trainConfig = {
+                epochs: config.epochs,
+                batchSize: 32,
+                validationData: valXs && valYs ? [valXs, valYs] : undefined,
+                callbacks: {
+                    onEpochEnd: async (epoch, logs) => {
+                        console.log(`Epoch ${epoch + 1}/${config.epochs} - loss: ${logs.loss.toFixed(4)}${logs.val_loss ? ` - val_loss: ${logs.val_loss.toFixed(4)}` : ''}`);
+                        
+                        this.trainingHistory.loss.push(logs.loss);
+                        if (logs.val_loss) {
+                            this.trainingHistory.valLoss.push(logs.val_loss);
+                        }
+                        
+                        if (onProgress) {
+                            onProgress(epoch + 1, logs.loss, logs.val_loss);
+                        }
+                        
+                        // Принудительная очистка памяти
+                        if (epoch % 5 === 0) {
+                            await tf.nextFrame();
+                        }
+                    }
+                }
+            };
+
+            // Start training
+            await this.model.fit(xs, ys, trainConfig);
+
+            // Cleanup
+            xs.dispose();
+            ys.dispose();
+            if (valXs) valXs.dispose();
+            if (valYs) valYs.dispose();
+
+        } catch (error) {
+            console.error('Training error:', error);
+            throw error;
+        } finally {
+            this.isTraining = false;
+        }
+    }
+
+    async test(trainingData) {
+        if (!this.model) {
+            throw new Error('Model not trained');
+        }
+
+        const { testX, testY, storeIndices } = trainingData;
+        
+        if (testX.length === 0) {
+            throw new Error('No test data available');
+        }
+
+        console.log(`Testing on ${testX.length} sequences`);
+
+        // Convert to tensors
+        const xs = tf.tensor3d(testX);
+        const ys = tf.tensor2d(testY);
+
+        // Make predictions
+        const predictions = this.model.predict(xs);
+        const predData = await predictions.array();
+        const actualData = await ys.array();
+
+        // Calculate RMSE per store
+        const storeRMSE = {};
+        const storePredictions = {};
+
+        storeIndices.forEach((storeId, index) => {
+            if (!storeRMSE[storeId]) {
+                storeRMSE[storeId] = [];
+                storePredictions[storeId] = {
+                    predicted: [],
+                    actual: []
+                };
+            }
+
+            const pred = predData[index];
+            const actual = actualData[index];
             
-            // Восстанавливаем оригинальный HTML
+            // Calculate RMSE for this prediction
+            const squaredErrors = pred.map((p, i) => Math.pow(p - actual[i], 2));
+            const mse = squaredErrors.reduce((a, b) => a + b, 0) / squaredErrors.length;
+            const rmse = Math.sqrt(mse);
+            
+            storeRMSE[storeId].push(rmse);
+            storePredictions[storeId].predicted.push(pred);
+            storePredictions[storeId].actual.push(actual);
+        });
+
+        // Average RMSE per store
+        Object.keys(storeRMSE).forEach(storeId => {
+            const rmses = storeRMSE[storeId];
+            storeRMSE[storeId] = rmses.reduce((a, b) => a + b, 0) / rmses.length;
+        });
+
+        // Calculate overall RMSE
+        const allPredictions = predData.flat();
+        const allActuals = actualData.flat();
+        const overallSquaredErrors = allPredictions.map((p, i) => Math.pow(p - allActuals[i], 2));
+        const overallMSE = overallSquaredErrors.reduce((a, b) => a + b, 0) / overallSquaredErrors.length;
+        const overallRMSE = Math.sqrt(overallMSE);
+
+        // Cleanup
+        xs.dispose();
+        ys.dispose();
+        predictions.dispose();
+
+        console.log('Overall RMSE:', overallRMSE);
+        console.log('Store RMSE:', storeRMSE);
+
+        return {
+            overallRMSE,
+            storeRMSE,
+            storePredictions,
+            testSize: testX.length
+        };
+    }
+
+    async predict(sequence) {
+        if (!this.model) {
+            throw new Error('Model not trained');
+        }
+
+        const tensor = tf.tensor3d([sequence]);
+        const prediction = this.model.predict(tensor);
+        const result = await prediction.array();
+        
+        tensor.dispose();
+        prediction.dispose();
+        
+        return result[0];
+    }
+
+    dispose() {
+        if (this.model) {
+            this.model.dispose();
+            this.model = null;
+        }
+    }
+}
+[file content end]
