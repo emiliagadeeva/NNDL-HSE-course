@@ -8,7 +8,7 @@ class LSTMForecaster {
         };
     }
 
-    async createModel(inputShape, lstmLayers = 2, hiddenUnits = 64, learningRate = 0.01) {
+    async createModel(inputShape, lstmLayers = 2, hiddenUnits = 32, learningRate = 0.1) {
         this.model = tf.sequential();
         
         // First LSTM layer
@@ -43,7 +43,7 @@ class LSTMForecaster {
         return this.model;
     }
 
-    async trainModel(trainX, trainY, epochs = 100, validationSplit = 0.1, callback = null) {
+    async trainModel(trainX, trainY, epochs = 50, validationSplit = 0.1, callback = null) {
         if (!this.model) {
             throw new Error('Model not created. Call createModel first.');
         }
@@ -54,7 +54,7 @@ class LSTMForecaster {
         const xs = tf.tensor3d(trainX);
         const ys = tf.tensor2d(trainY);
 
-        const batchSize = 32;
+        const batchSize = 16;
         const validationSplitIndex = Math.floor(trainX.length * (1 - validationSplit));
 
         const trainXS = xs.slice([0, 0, 0], [validationSplitIndex, trainX[0].length, trainX[0][0].length]);
