@@ -1,3 +1,5 @@
+[file name]: data-loader.js
+[file content begin]
 class DataLoader {
     constructor() {
         this.data = null;
@@ -108,6 +110,185 @@ class DataLoader {
         return this.data.slice(0, limit);
     }
 
+    // 🔥 НОВЫЕ МЕТОДЫ ДЛЯ EDA
+    getEDAStats() {
+        if (!this.data || this.data.length === 0) return null;
+
+        const stats = {
+            totalStores: this.stores.size,
+            totalRecords: this.data.length,
+            dateRange: this.getDateRange(),
+            salesStats: this.getSalesStats(),
+            holidayStats: this.getHolidayStats(),
+            featureStats: this.getFeatureStats()
+        };
+
+        return stats;
+    }
+
+    getDateRange() {
+        const dates = this.data.map(row => row.timestamp);
+        const minDate = new Date(Math.min(...dates));
+        const maxDate = new Date(Math.max(...dates));
+        return {
+            start: minDate.toLocaleDateString(),
+            end: maxDate.toLocaleDateString(),
+            weeks: Math.round((maxDate - minDate) / (7 * 24 * 60 * 60 * 1000))
+        };
+    }
+
+    getSalesStats() {
+        const sales = this.data.map(row => row.Weekly_Sales);
+        return {
+            total: sales.reduce((a, b) => a + b, 0),
+            average: sales.reduce((a, b) => a + b, 0) / sales.length,
+            min: Math.min(...sales),
+            max: Math.max(...sales),
+            median: this.getMedian(sales)
+        };
+    }
+
+    getHolidayStats() {
+        const holidayWeeks = this.data.filter(row => row.Holiday_Flag === 1);
+        const nonHolidayWeeks = this.data.filter(row => row.Holiday_Flag === 0);
+        
+        const holidaySales = holidayWeeks.map(row => row.Weekly_Sales);
+        const nonHolidaySales = nonHolidayWeeks.map(row => row.Weekly_Sales);
+        
+        return {
+            holidayWeeks: holidayWeeks.length,
+            nonHolidayWeeks: nonHolidayWeeks.length,
+            avgHolidaySales: holidaySales.reduce((a, b) => a + b, 0) / holidaySales.length,
+            avgNonHolidaySales: nonHolidaySales.reduce((a, b) => a + b, 0) / nonHolidaySales.length
+        };
+    }
+
+    getFeatureStats() {
+        const features = ['Temperature', 'Fuel_Price', 'CPI', 'Unemployment'];
+        const stats = {};
+        
+        features.forEach(feature => {
+            const values = this.data.map(row => row[feature]).filter(val => !isNaN(val));
+            stats[feature] = {
+                min: Math.min(...values),
+                max: Math.max(...values),
+                average: values.reduce((a, b) => a + b, 0) / values.length
+            };
+        });
+        
+        return stats;
+    }
+
+    getMedian(values) {
+        const sorted = [...values].sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+        return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    }
+
+    getSalesByStore() {
+        const storeSales = {};
+        this.stores.forEach(storeId => {
+            const storeData = this.getStoreData(storeId);
+            const totalSales = storeData.reduce((sum, row) => sum + row.Weekly_Sales, 0);
+            storeSales[storeId] = totalSales;
+        });
+        return storeSales;
+    }
+
+    getSalesDistribution() {
+        const sales = this.data.map(row => row.Weekly_Sales);
+        return this.createHistogramData(sales, 20);
+    }
+
+    getSalesTrend() {
+        const monthlySales = {};
+        this.data.forEach(row => {
+            const date = new Date(row.timestamp);
+            const monthKey = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+            if (!monthlySales[monthKey]) {
+                monthlySales[monthKey] = { total: 0, count: 0 };
+            }
+            monthlySales[monthKey].total += row.Weekly_Sales;
+            monthlySales[monthKey].count += 1;
+        });
+
+        const labels = Object.keys(monthlySales).sort();
+        const data = labels.map(month => monthlySales[month].total / monthlySales[month].count);
+        
+        return { labels, data };
+    }
+
+    getCorrelationData() {
+        const features = ['Weekly_Sales', 'Temperature', 'Fuel_Price', 'CPI', 'Unemployment'];
+        const data = {};
+        
+        features.forEach(feature => {
+            data[feature] = this.data.map(row => row[feature]);
+        });
+
+        const correlations = {};
+        features.forEach(feat1 => {
+            correlations[feat1] = {};
+            features.forEach(feat2 => {
+                if (feat1 !== feat2) {
+                    correlations[feat1][feat2] = this.calculateCorrelation(data[feat1], data[feat2]);
+                }
+            });
+        });
+
+        return {
+            labels: features,
+            datasets: features.map((feat1, i) => ({
+                label: feat1,
+                data: features.map((feat2, j) => i === j ? 1 : correlations[feat1][feat2] || 0),
+                backgroundColor: this.getColorForValue(correlations[feat1][feat2] || 0)
+            }))
+        };
+    }
+
+    calculateCorrelation(x, y) {
+        const n = x.length;
+        const sum_x = x.reduce((a, b) => a + b, 0);
+        const sum_y = y.reduce((a, b) => a + b, 0);
+        const sum_xy = x.reduce((sum, val, i) => sum + val * y[i], 0);
+        const sum_x2 = x.reduce((sum, val) => sum + val * val, 0);
+        const sum_y2 = y.reduce((sum, val) => sum + val * val, 0);
+        
+        const numerator = n * sum_xy - sum_x * sum_y;
+        const denominator = Math.sqrt((n * sum_x2 - sum_x * sum_x) * (n * sum_y2 - sum_y * sum_y));
+        
+        return denominator === 0 ? 0 : numerator / denominator;
+    }
+
+    getColorForValue(value) {
+        const intensity = Math.abs(value) * 255;
+        if (value > 0) {
+            return `rgba(0, ${intensity}, 0, 0.7)`;
+        } else if (value < 0) {
+            return `rgba(${intensity}, 0, 0, 0.7)`;
+        }
+        return 'rgba(128, 128, 128, 0.7)';
+    }
+
+    createHistogramData(data, bins = 10) {
+        const min = Math.min(...data);
+        const max = Math.max(...data);
+        const binSize = (max - min) / bins;
+        
+        const histogram = Array(bins).fill(0);
+        const labels = [];
+        
+        for (let i = 0; i < bins; i++) {
+            const binStart = min + i * binSize;
+            const binEnd = binStart + binSize;
+            labels.push(`${(binStart / 1000).toFixed(0)}k-${(binEnd / 1000).toFixed(0)}k`);
+            
+            histogram[i] = data.filter(val => val >= binStart && val < binEnd).length;
+        }
+        
+        return { labels, data: histogram };
+    }
+
     prepareSequences(storeIds, windowSize, testSplit = 0.8) {
         const sequences = [];
         const targets = [];
@@ -204,3 +385,4 @@ class DataLoader {
         return count;
     }
 }
+[file content end]
