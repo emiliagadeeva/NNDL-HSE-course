@@ -27,10 +27,20 @@
             text-align: center;
             margin-bottom: 20px;
             cursor: pointer;
+            position: relative;
         }
         .file-upload.dragover {
             border-color: #007bff;
             background-color: #f0f8ff;
+        }
+        .file-input {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
         }
         button {
             background-color: #007bff;
@@ -103,11 +113,16 @@
             display: flex;
             flex-direction: column;
             gap: 5px;
+            min-width: 150px;
         }
         select, input {
             padding: 8px;
             border: 1px solid #ccc;
             border-radius: 4px;
+        }
+        .slider-value {
+            font-weight: bold;
+            color: #007bff;
         }
         .info-text {
             background: #e7f3ff;
@@ -129,7 +144,7 @@
         </div>
         <div class="file-upload" id="fileUpload">
             <p>📁 Drag & drop your CSV file here or click to select</p>
-            <input type="file" id="fileInput" accept=".csv" style="display: none;">
+            <input type="file" id="fileInput" class="file-input" accept=".csv">
         </div>
         
         <div id="dataPreview" style="display: none;">
@@ -151,13 +166,13 @@
             <div class="control-group">
                 <label>Window Size (weeks):</label>
                 <input type="range" id="windowSize" min="4" max="16" value="12">
-                <span id="windowSizeValue">12</span>
+                <span id="windowSizeValue" class="slider-value">12</span>
             </div>
             
             <div class="control-group">
                 <label>Test Set Size:</label>
-                <input type="range" id="trainSplit" min="10" max="40" value="20">
-                <span id="trainSplitValue">20%</span>
+                <input type="range" id="testSplit" min="10" max="40" value="20">
+                <span id="testSplitValue" class="slider-value">20%</span>
                 <small>Percentage of latest data for testing</small>
             </div>
             
@@ -166,6 +181,7 @@
                 <select id="lstmLayers">
                     <option value="1">1 Layer</option>
                     <option value="2" selected>2 Layers</option>
+                    <option value="3">3 Layers</option>
                 </select>
             </div>
             
@@ -174,12 +190,14 @@
                 <select id="hiddenUnits">
                     <option value="16">16 units</option>
                     <option value="32" selected>32 units</option>
+                    <option value="64">64 units</option>
                 </select>
             </div>
             
             <div class="control-group">
                 <label>Learning Rate:</label>
                 <select id="learningRate">
+                    <option value="0.01">0.01</option>
                     <option value="0.05">0.05</option>
                     <option value="0.1" selected>0.1</option>
                 </select>
@@ -188,8 +206,10 @@
             <div class="control-group">
                 <label>Epochs:</label>
                 <select id="epochs">
+                    <option value="20">20</option>
                     <option value="30">30</option>
                     <option value="50" selected>50</option>
+                    <option value="100">100</option>
                 </select>
             </div>
         </div>
