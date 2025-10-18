@@ -1,313 +1,340 @@
-// app.js
-import DataLoader from './data-loader.js';
-import SalesPredictor from './gru.js';
-
-class WalmartSalesApp {
+class SalesForecastingApp {
     constructor() {
         this.dataLoader = new DataLoader();
-        this.predictor = new SalesPredictor();
-        this.processedData = null;
-        this.predictions = null;
-        this.charts = {};
+        this.lstm = new LSTMForecaster();
+        this.selectedStores = [];
+        this.trainingData = null;
+        this.testResults = null;
         
         this.initializeEventListeners();
+        this.initializeCharts();
     }
 
     initializeEventListeners() {
-        document.getElementById('loadData').addEventListener('click', () => this.loadData());
-        document.getElementById('trainModel').addEventListener('click', () => this.trainModel());
-        document.getElementById('predict').addEventListener('click', () => this.predict());
-    }
-
-    async loadData() {
-        const fileInput = document.getElementById('csvFile');
-        if (!fileInput.files.length) {
-            this.showError('Please select a CSV file');
-            return;
-        }
-
-        try {
-            this.showInfo('Loading and processing CSV data...');
-            this.processedData = await this.dataLoader.loadCSV(fileInput.files[0]);
-            
-            document.getElementById('fileInfo').innerHTML = `
-                <p>✅ Data loaded successfully!</p>
-                <p>Stores: ${this.processedData.stores.join(', ')}</p>
-                <p>Training samples: ${this.processedData.X_train.shape[0]}</p>
-                <p>Test samples: ${this.processedData.X_test.shape[0]}</p>
-                <p>Sequence length: ${this.processedData.sequenceLength} weeks</p>
-                <p>Prediction horizon: ${this.processedData.predictionHorizon} weeks</p>
-            `;
-
-            document.getElementById('trainModel').disabled = false;
-            this.showInfo('Data ready for training');
-            
-        } catch (error) {
-            this.showError(`Error loading data: ${error.message}`);
-        }
-    }
-
-    async trainModel() {
-        if (!this.processedData) {
-            this.showError('Please load data first');
-            return;
-        }
-
-        try {
-            document.getElementById('trainModel').disabled = true;
-            this.showInfo('Creating model...');
-
-            // Create model
-            this.predictor.createModel(
-                this.processedData.sequenceLength,
-                this.processedData.featureCount,
-                this.processedData.stores.length * this.processedData.predictionHorizon
-            );
-
-            this.showInfo('Starting training...');
-
-            // Train model with progress updates
-            await this.predictor.train(
-                this.processedData.X_train,
-                this.processedData.y_train,
-                this.processedData.X_test,
-                this.processedData.y_test,
-                50,
-                32,
-                (progress) => {
-                    const progressBar = document.getElementById('trainingProgress');
-                    progressBar.style.width = `${progress.progress}%`;
-                    
-                    document.getElementById('trainingInfo').innerHTML = `
-                        Epoch: ${progress.epoch}/50 | Loss: ${progress.loss.toFixed(4)} | Val Loss: ${progress.valLoss.toFixed(4)}
-                    `;
-                }
-            );
-
-            document.getElementById('predict').disabled = false;
-            this.showInfo('✅ Training completed!');
-            
-        } catch (error) {
-            this.showError(`Training failed: ${error.message}`);
-            document.getElementById('trainModel').disabled = false;
-        }
-    }
-
-    async predict() {
-        if (!this.predictor.isTrained) {
-            this.showError('Please train the model first');
-            return;
-        }
-
-        try {
-            this.showInfo('Making predictions...');
-            
-            // Make predictions
-            const yPred = await this.predictor.predict(this.processedData.X_test);
-            const yTrue = this.processedData.y_test;
-            
-            // Compute overall RMSE
-            const overallRMSE = this.predictor.evaluate(yTrue, yPred);
-            
-            // Compute per-store RMSE
-            const perStoreRMSE = this.predictor.computePerStoreRMSE(
-                yTrue, 
-                yPred, 
-                this.processedData.stores.length, 
-                this.processedData.predictionHorizon
-            );
-
-            this.predictions = { yTrue, yPred, perStoreRMSE, overallRMSE };
-            this.displayResults();
-            
-            // Clean up
-            yPred.dispose();
-            
-        } catch (error) {
-            this.showError(`Prediction failed: ${error.message}`);
-        }
-    }
-
-    displayResults() {
-        const resultsDiv = document.getElementById('results');
-        resultsDiv.innerHTML = `
-            <h4>Prediction Results</h4>
-            <p><strong>Overall RMSE:</strong> ${this.predictions.overallRMSE.toFixed(2)}</p>
-        `;
-
-        this.createRMSEChart();
-        this.createTimelineCharts();
-    }
-
-    createRMSEChart() {
-        const ctx = document.getElementById('rmseChart').getContext('2d');
+        // File upload
+        const fileUpload = document.getElementById('fileUpload');
+        const fileInput = document.getElementById('fileInput');
         
-        if (this.charts.rmse) {
-            this.charts.rmse.destroy();
-        }
+        fileUpload.addEventListener('click', () => fileInput.click());
+        fileUpload.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            fileUpload.classList.add('dragover');
+        });
+        fileUpload.addEventListener('dragleave', () => {
+            fileUpload.classList.remove('dragover');
+        });
+        fileUpload.addEventListener('drop', (e) => {
+            e.preventDefault();
+            fileUpload.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                this.handleFileUpload(files[0]);
+            }
+        });
+        
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                this.handleFileUpload(e.target.files[0]);
+            }
+        });
 
-        const storeLabels = this.predictions.perStoreRMSE.map(item => `Store ${item.store}`);
-        const rmseValues = this.predictions.perStoreRMSE.map(item => item.rmse);
+        // Model controls
+        document.getElementById('windowSize').addEventListener('input', (e) => {
+            document.getElementById('windowSizeValue').textContent = e.target.value;
+        });
+        
+        document.getElementById('trainSplit').addEventListener('input', (e) => {
+            document.getElementById('trainSplitValue').textContent = e.target.value + '%';
+        });
 
-        this.charts.rmse = new Chart(ctx, {
+        document.getElementById('trainBtn').addEventListener('click', () => this.trainModel());
+        document.getElementById('testBtn').addEventListener('click', () => this.testModel());
+        document.getElementById('exportBtn').addEventListener('click', () => this.exportResults());
+        
+        document.getElementById('storeChartSelect').addEventListener('change', (e) => {
+            this.updatePredictionChart(e.target.value);
+        });
+    }
+
+    initializeCharts() {
+        // Loss chart
+        this.lossChart = new Chart(document.getElementById('lossChart'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Training Loss',
+                        borderColor: '#007bff',
+                        backgroundColor: 'rgba(0, 123, 255, 0.1)',
+                        data: []
+                    },
+                    {
+                        label: 'Validation Loss',
+                        borderColor: '#28a745',
+                        backgroundColor: 'rgba(40, 167, 69, 0.1)',
+                        data: []
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: { display: true, text: 'Loss' }
+                    },
+                    x: {
+                        title: { display: true, text: 'Epoch' }
+                    }
+                }
+            }
+        });
+
+        // RMSE chart
+        this.rmseChart = new Chart(document.getElementById('rmseChart'), {
             type: 'bar',
             data: {
-                labels: storeLabels,
+                labels: [],
                 datasets: [{
-                    label: 'RMSE by Store (Lower is Better)',
-                    data: rmseValues,
-                    backgroundColor: rmseValues.map(rmse => 
-                        rmse < 100000 ? '#4CAF50' : 
-                        rmse < 200000 ? '#FFC107' : '#F44336'
-                    ),
-                    borderColor: '#333',
-                    borderWidth: 1
+                    label: 'RMSE',
+                    backgroundColor: '#ff6b6b',
+                    borderColor: '#fa5252',
+                    borderWidth: 1,
+                    data: []
                 }]
             },
             options: {
-                indexAxis: 'y',
                 responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: 'Store Prediction Performance (RMSE)'
-                    },
-                    legend: {
-                        display: false
-                    }
-                },
                 scales: {
-                    x: {
-                        title: {
-                            display: true,
-                            text: 'Root Mean Squared Error'
-                        }
-                    },
                     y: {
-                        title: {
-                            display: true,
-                            text: 'Stores'
-                        }
+                        beginAtZero: true,
+                        title: { display: true, text: 'RMSE' }
+                    },
+                    x: {
+                        title: { display: true, text: 'Store' }
                     }
                 }
             }
         });
-    }
 
-    createTimelineCharts() {
-        const timelinesDiv = document.getElementById('timelines');
-        timelinesDiv.innerHTML = '<h4>Prediction Timelines</h4>';
-
-        // Show top 5 stores for demonstration
-        const topStores = this.predictions.perStoreRMSE.slice(0, 5);
-        
-        topStores.forEach(store => {
-            const storeDiv = document.createElement('div');
-            storeDiv.className = 'timeline-container';
-            storeDiv.innerHTML = `<h5>Store ${store.store} (RMSE: ${store.rmse.toFixed(2)})</h5>`;
-            
-            const canvas = document.createElement('canvas');
-            canvas.width = 800;
-            canvas.height = 200;
-            storeDiv.appendChild(canvas);
-            timelinesDiv.appendChild(storeDiv);
-
-            this.createStoreTimeline(canvas, store.store);
-        });
-    }
-
-    createStoreTimeline(canvas, storeId) {
-        const ctx = canvas.getContext('2d');
-        const sampleSize = Math.min(20, this.processedData.X_test.shape[0]);
-        
-        // For demonstration, show first few predictions vs actual
-        const actualData = [];
-        const predictedData = [];
-
-        tf.tidy(() => {
-            for (let i = 0; i < sampleSize; i++) {
-                const actual = this.predictions.yTrue.slice([i, (storeId-1)*3], [1, 1]).dataSync()[0];
-                const predicted = this.predictions.yPred.slice([i, (storeId-1)*3], [1, 1]).dataSync()[0];
-                
-                actualData.push(actual);
-                predictedData.push(predicted);
-            }
-        });
-
-        new Chart(ctx, {
+        // Prediction chart
+        this.predictionChart = new Chart(document.getElementById('predictionChart'), {
             type: 'line',
             data: {
-                labels: Array.from({length: sampleSize}, (_, i) => `Week ${i+1}`),
+                labels: ['Week 1', 'Week 2', 'Week 3'],
                 datasets: [
                     {
                         label: 'Actual Sales',
-                        data: actualData,
-                        borderColor: '#3366CC',
-                        backgroundColor: 'rgba(51, 102, 204, 0.1)',
-                        tension: 0.4
+                        borderColor: '#28a745',
+                        backgroundColor: 'rgba(40, 167, 69, 0.1)',
+                        data: []
                     },
                     {
                         label: 'Predicted Sales',
-                        data: predictedData,
-                        borderColor: '#FF6384',
-                        backgroundColor: 'rgba(255, 99, 132, 0.1)',
-                        tension: 0.4,
+                        borderColor: '#007bff',
+                        backgroundColor: 'rgba(0, 123, 255, 0.1)',
+                        data: [],
                         borderDash: [5, 5]
                     }
                 ]
             },
             options: {
                 responsive: true,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: `Store ${storeId} - Actual vs Predicted Sales`
-                    }
-                },
                 scales: {
                     y: {
-                        title: {
-                            display: true,
-                            text: 'Weekly Sales'
-                        }
-                    },
-                    x: {
-                        title: {
-                            display: true,
-                            text: 'Time (Weeks)'
-                        }
+                        beginAtZero: true,
+                        title: { display: true, text: 'Sales (millions)' }
                     }
                 }
             }
         });
     }
 
-    showInfo(message) {
-        console.log('INFO:', message);
+    async handleFileUpload(file) {
+        try {
+            const data = await this.dataLoader.loadCSV(file);
+            this.showDataPreview();
+            this.populateStoreSelect();
+            document.getElementById('trainBtn').disabled = false;
+        } catch (error) {
+            alert('Error loading file: ' + error.message);
+        }
     }
 
-    showError(message) {
-        console.error('ERROR:', message);
-        alert(`Error: ${message}`);
-    }
-
-    dispose() {
-        this.dataLoader.dispose();
-        this.predictor.dispose();
+    showDataPreview() {
+        const preview = this.dataLoader.getDataPreview(10);
+        const previewTable = document.getElementById('previewTable');
         
-        // Clean up charts
-        Object.values(this.charts).forEach(chart => {
-            if (chart && chart.destroy) {
-                chart.destroy();
-            }
+        let html = '<table><thead><tr>';
+        Object.keys(preview[0] || {}).forEach(key => {
+            if (key !== 'timestamp') html += `<th>${key}</th>`;
         });
+        html += '</tr></thead><tbody>';
+        
+        preview.forEach(row => {
+            html += '<tr>';
+            Object.entries(row).forEach(([key, value]) => {
+                if (key !== 'timestamp') {
+                    html += `<td>${value}</td>`;
+                }
+            });
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        
+        previewTable.innerHTML = html;
+        document.getElementById('dataPreview').style.display = 'block';
+    }
+
+    populateStoreSelect() {
+        const storeSelect = document.getElementById('storeSelect');
+        const chartSelect = document.getElementById('storeChartSelect');
+        
+        storeSelect.innerHTML = '';
+        chartSelect.innerHTML = '<option value="">Select a store...</option>';
+        
+        this.dataLoader.getAllStores().forEach(storeId => {
+            const option1 = document.createElement('option');
+            option1.value = storeId;
+            option1.textContent = `Store ${storeId}`;
+            storeSelect.appendChild(option1);
+            
+            const option2 = document.createElement('option');
+            option2.value = storeId;
+            option2.textContent = `Store ${storeId}`;
+            chartSelect.appendChild(option2);
+        });
+    }
+
+    async trainModel() {
+        const selectedOptions = Array.from(document.getElementById('storeSelect').selectedOptions);
+        this.selectedStores = selectedOptions.map(option => parseInt(option.value));
+        
+        if (this.selectedStores.length === 0) {
+            alert('Please select at least one store');
+            return;
+        }
+
+        const windowSize = parseInt(document.getElementById('windowSize').value);
+        const trainSplit = parseInt(document.getElementById('trainSplit').value) / 100;
+        const lstmLayers = parseInt(document.getElementById('lstmLayers').value);
+        const hiddenUnits = parseInt(document.getElementById('hiddenUnits').value);
+        const learningRate = parseFloat(document.getElementById('learningRate').value);
+        const epochs = parseInt(document.getElementById('epochs').value);
+
+        // Prepare data
+        this.trainingData = this.dataLoader.prepareSequences(
+            this.selectedStores, 
+            windowSize, 
+            trainSplit
+        );
+
+        // Create model
+        const inputShape = [windowSize, this.trainingData.featureNames.length];
+        await this.lstm.createModel(inputShape, lstmLayers, hiddenUnits, learningRate);
+
+        // Show progress
+        document.getElementById('trainingProgress').style.display = 'block';
+        document.getElementById('trainBtn').disabled = true;
+        document.getElementById('testBtn').disabled = true;
+
+        // Train model
+        await this.lstm.trainModel(
+            this.trainingData.trainX,
+            this.trainingData.trainY,
+            epochs,
+            0.1,
+            (epoch, totalEpochs, loss, valLoss) => {
+                const progress = (epoch / totalEpochs) * 100;
+                document.getElementById('progressFill').style.width = progress + '%';
+                document.getElementById('progressText').textContent = 
+                    `Epoch: ${epoch}/${totalEpochs} - Loss: ${loss.toFixed(6)}`;
+                
+                // Update loss chart
+                this.lossChart.data.labels.push(epoch);
+                this.lossChart.data.datasets[0].data.push(loss);
+                this.lossChart.data.datasets[1].data.push(valLoss);
+                this.lossChart.update();
+            }
+        );
+
+        document.getElementById('trainBtn').disabled = false;
+        document.getElementById('testBtn').disabled = false;
+        alert('Model training completed!');
+    }
+
+    async testModel() {
+        if (!this.trainingData || !this.lstm.model) {
+            alert('Please train the model first');
+            return;
+        }
+
+        try {
+            const predictions = await this.lstm.predict(this.trainingData.testX);
+            this.testResults = await this.lstm.evaluateByStore(
+                predictions,
+                this.trainingData.testY,
+                this.trainingData.storeIndices
+            );
+
+            this.updateRMSEChart();
+            document.getElementById('exportBtn').disabled = false;
+            alert('Model testing completed!');
+        } catch (error) {
+            alert('Error testing model: ' + error.message);
+        }
+    }
+
+    updateRMSEChart() {
+        if (!this.testResults) return;
+
+        // Get top 10 stores by RMSE
+        const topStores = Object.entries(this.testResults)
+            .sort(([, a], [, b]) => b.rmse - a.rmse)
+            .slice(0, 10);
+
+        this.rmseChart.data.labels = topStores.map(([storeId]) => `Store ${storeId}`);
+        this.rmseChart.data.datasets[0].data = topStores.map(([, data]) => data.rmse);
+        this.rmseChart.update();
+    }
+
+    updatePredictionChart(storeId) {
+        if (!this.testResults || !storeId || !this.testResults[storeId]) return;
+
+        const storeData = this.testResults[storeId];
+        
+        // Use the first prediction/actual pair for demonstration
+        if (storeData.actuals.length > 0 && storeData.predictions.length > 0) {
+            this.predictionChart.data.datasets[0].data = storeData.actuals[0];
+            this.predictionChart.data.datasets[1].data = storeData.predictions[0];
+            this.predictionChart.update();
+        }
+    }
+
+    exportResults() {
+        if (!this.testResults) {
+            alert('No results to export');
+            return;
+        }
+
+        let csvContent = 'Store,RMSE\n';
+        Object.entries(this.testResults).forEach(([storeId, data]) => {
+            csvContent += `${storeId},${data.rmse.toFixed(6)}\n`;
+        });
+
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'sales_forecast_results.csv';
+        a.click();
+        window.URL.revokeObjectURL(url);
     }
 }
 
-// Initialize app when DOM is loaded
+// Initialize app when page loads
+let app;
 document.addEventListener('DOMContentLoaded', () => {
-    new WalmartSalesApp();
+    app = new SalesForecastingApp();
 });
-
-export default WalmartSalesApp;
