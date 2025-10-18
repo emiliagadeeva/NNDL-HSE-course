@@ -1,5 +1,4 @@
-[file name]: index.html
-[file content begin]
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -29,10 +28,14 @@
             text-align: center;
             margin-bottom: 20px;
             cursor: pointer;
+            transition: all 0.3s ease;
         }
         .file-upload.dragover {
             border-color: #007bff;
             background-color: #f0f8ff;
+        }
+        .file-upload:hover {
+            border-color: #007bff;
         }
         button {
             background-color: #007bff;
@@ -42,6 +45,10 @@
             border-radius: 5px;
             cursor: pointer;
             margin: 5px;
+            transition: background-color 0.3s ease;
+        }
+        button:hover:not(:disabled) {
+            background-color: #0056b3;
         }
         button:disabled {
             background-color: #6c757d;
@@ -105,11 +112,17 @@
             display: flex;
             flex-direction: column;
             gap: 5px;
+            min-width: 150px;
         }
         select, input {
             padding: 8px;
             border: 1px solid #ccc;
             border-radius: 4px;
+        }
+        .slider-value {
+            font-weight: bold;
+            color: #007bff;
+            margin-left: 10px;
         }
         .eda-container {
             display: grid;
@@ -212,15 +225,13 @@
         <h2>2. Model Configuration</h2>
         <div class="controls">
             <div class="control-group">
-                <label>Window Size (weeks):</label>
+                <label>Window Size (weeks): <span id="windowSizeValue" class="slider-value">12</span></label>
                 <input type="range" id="windowSize" min="4" max="16" value="12">
-                <span id="windowSizeValue">12</span>
             </div>
             
             <div class="control-group">
-                <label>Train/Test Split:</label>
+                <label>Train/Test Split: <span id="trainSplitValue" class="slider-value">80%</span></label>
                 <input type="range" id="trainSplit" min="60" max="90" value="80">
-                <span id="trainSplitValue">80%</span>
             </div>
             
             <div class="control-group">
@@ -228,6 +239,7 @@
                 <select id="lstmLayers">
                     <option value="1">1 Layer</option>
                     <option value="2" selected>2 Layers</option>
+                    <option value="3">3 Layers</option>
                 </select>
             </div>
             
@@ -236,12 +248,14 @@
                 <select id="hiddenUnits">
                     <option value="16">16 units</option>
                     <option value="32" selected>32 units</option>
+                    <option value="64">64 units</option>
                 </select>
             </div>
             
             <div class="control-group">
                 <label>Learning Rate:</label>
                 <select id="learningRate">
+                    <option value="0.01">0.01</option>
                     <option value="0.05">0.05</option>
                     <option value="0.1" selected>0.1</option>
                 </select>
@@ -250,8 +264,9 @@
             <div class="control-group">
                 <label>Epochs:</label>
                 <select id="epochs">
-                    <option value="30">30</option>
+                    <option value="20">20</option>
                     <option value="50" selected>50</option>
+                    <option value="100">100</option>
                 </select>
             </div>
         </div>
@@ -298,4 +313,3 @@
     <script src="app.js"></script>
 </body>
 </html>
-[file content end]
