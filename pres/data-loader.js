@@ -16,6 +16,11 @@ class DataLoader {
                     this.data = this.parseCSV(csv);
                     this.processedData = this.preprocessData(this.data);
                     this.extractStores();
+                    console.log('Data loaded successfully:', {
+                        totalRows: this.data.length,
+                        stores: this.getAllStores(),
+                        sampleData: this.data[0]
+                    });
                     resolve(this.processedData);
                 } catch (error) {
                     reject(error);
@@ -29,11 +34,15 @@ class DataLoader {
 
     parseCSV(csvText) {
         const lines = csvText.split('\n').filter(line => line.trim());
+        if (lines.length < 2) {
+            throw new Error('CSV file is empty or has only headers');
+        }
+        
         const headers = lines[0].split(',').map(h => h.trim());
         
         const data = [];
         for (let i = 1; i < lines.length; i++) {
-            const values = lines[i].split(',');
+            const values = this.parseCSVLine(lines[i]);
             const row = {};
             
             headers.forEach((header, index) => {
@@ -56,19 +65,54 @@ class DataLoader {
                 row.timestamp = this.parseDate(row.Date);
             }
             
-            data.push(row);
+            // Only add row if it has valid store and sales data
+            if (row.Store && !isNaN(row.Weekly_Sales)) {
+                data.push(row);
+            }
         }
         
         return data.sort((a, b) => a.timestamp - b.timestamp);
+    }
+
+    parseCSVLine(line) {
+        const result = [];
+        let current = '';
+        let inQuotes = false;
+        
+        for (let i = 0; i < line.length; i++) {
+            const char = line[i];
+            
+            if (char === '"') {
+                inQuotes = !inQuotes;
+            } else if (char === ',' && !inQuotes) {
+                result.push(current);
+                current = '';
+            } else {
+                current += char;
+            }
+        }
+        
+        result.push(current);
+        return result;
     }
 
     parseDate(dateStr) {
         // Handle DD-MM-YYYY format
         const parts = dateStr.split('-');
         if (parts.length === 3) {
-            return new Date(parts[2], parts[1] - 1, parts[0]).getTime();
+            // Try DD-MM-YYYY
+            const day = parseInt(parts[0]);
+            const month = parseInt(parts[1]) - 1;
+            const year = parseInt(parts[2]);
+            
+            if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+                return new Date(year, month, day).getTime();
+            }
         }
-        return new Date(dateStr).getTime();
+        
+        // Fallback to Date constructor
+        const date = new Date(dateStr);
+        return isNaN(date.getTime()) ? Date.now() : date.getTime();
     }
 
     preprocessData(data) {
@@ -86,6 +130,20 @@ class DataLoader {
         // Sort each store's data by date
         Object.keys(storeData).forEach(storeId => {
             storeData[storeId].sort((a, b) => a.timestamp - b.timestamp);
+            
+            // Remove duplicates based on date
+            const uniqueData = [];
+            const dateSet = new Set();
+            
+            storeData[storeId].forEach(row => {
+                const dateKey = row.Date;
+                if (!dateSet.has(dateKey)) {
+                    dateSet.add(dateKey);
+                    uniqueData.push(row);
+                }
+            });
+            
+            storeData[storeId] = uniqueData;
         });
 
         return storeData;
@@ -115,7 +173,10 @@ class DataLoader {
 
         storeIds.forEach(storeId => {
             const storeData = this.getStoreData(storeId);
-            if (storeData.length < windowSize + 3) return; // Need enough data for 3-week prediction
+            if (storeData.length < windowSize + 3) {
+                console.log(`Skipping store ${storeId}: insufficient data (${storeData.length} records)`);
+                return;
+            }
 
             for (let i = 0; i < storeData.length - windowSize - 2; i++) {
                 const sequence = [];
@@ -146,8 +207,14 @@ class DataLoader {
             }
         });
 
+        if (sequences.length === 0) {
+            throw new Error('No sequences generated. Check if stores have enough data.');
+        }
+
         // Split data
         const splitIndex = Math.floor(sequences.length * testSplit);
+        
+        console.log(`Generated ${sequences.length} sequences, split at ${splitIndex} (${testSplit * 100}% training)`);
         
         return {
             trainX: sequences.slice(0, splitIndex),
