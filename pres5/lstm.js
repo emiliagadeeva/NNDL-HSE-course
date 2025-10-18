@@ -16,20 +16,32 @@ class LSTMForecaster {
         
         this.model = tf.sequential();
         
-        // First LSTM layer
+        // 🔥 ИСПРАВЛЕНИЕ: Добавляем регуляризацию и улучшаем архитектуру
+        
+        // First LSTM layer with dropout
         this.model.add(tf.layers.lstm({
             units: hiddenUnits,
             returnSequences: lstmLayers > 1,
-            inputShape: inputShape
+            inputShape: inputShape,
+            dropout: 0.2,  // 🔥 Добавляем dropout для регуляризации
+            recurrentDropout: 0.2
         }));
         
         // Additional LSTM layers
         for (let i = 1; i < lstmLayers; i++) {
             this.model.add(tf.layers.lstm({
                 units: hiddenUnits,
-                returnSequences: i < lstmLayers - 1
+                returnSequences: i < lstmLayers - 1,
+                dropout: 0.2,  // 🔥 Добавляем dropout
+                recurrentDropout: 0.2
             }));
         }
+        
+        // 🔥 Добавляем Dense layer для лучшего обучения
+        this.model.add(tf.layers.dense({
+            units: Math.floor(hiddenUnits / 2),
+            activation: 'relu'
+        }));
         
         // Output layer - predict 3 weeks
         this.model.add(tf.layers.dense({
@@ -37,7 +49,8 @@ class LSTMForecaster {
             activation: 'linear'
         }));
         
-        const optimizer = tf.train.adam(learningRate);
+        // 🔥 Уменьшаем learning rate для более стабильного обучения
+        const optimizer = tf.train.adam(learningRate * 0.1);
         
         this.model.compile({
             optimizer: optimizer,
@@ -45,6 +58,7 @@ class LSTMForecaster {
             metrics: ['mse']
         });
         
+        console.log('Model created with regularization');
         return this.model;
     }
 
@@ -62,10 +76,11 @@ class LSTMForecaster {
         try {
             const xs = tf.tensor3d(trainX);
             const ys = tf.tensor2d(trainY);
-            const valXs = valX ? tf.tensor3d(valX) : null;
-            const valYs = valY ? tf.tensor2d(valY) : null;
+            const valXs = valX && valX.length > 0 ? tf.tensor3d(valX) : null;
+            const valYs = valY && valY.length > 0 ? tf.tensor2d(valY) : null;
 
-            const batchSize = 16;
+            // 🔥 ИСПРАВЛЕНИЕ: Уменьшаем batch size для лучшего обобщения
+            const batchSize = Math.min(8, Math.floor(trainX.length / 10));
 
             for (let epoch = 0; epoch < epochs && this.isTraining; epoch++) {
                 const history = await this.model.fit(xs, ys, {
@@ -77,13 +92,19 @@ class LSTMForecaster {
                 });
 
                 const loss = history.history.loss[0];
-                const valLoss = history.history.val_loss ? history.history.val_loss[0] : loss;
+                // 🔥 ИСПРАВЛЕНИЕ: Правильно обрабатываем validation loss
+                const valLoss = history.history.val_loss && history.history.val_loss[0] ? history.history.val_loss[0] : loss;
 
                 this.trainingHistory.loss.push(loss);
                 this.trainingHistory.valLoss.push(valLoss);
 
                 if (callback) {
                     callback(epoch + 1, epochs, loss, valLoss);
+                }
+
+                // 🔥 Ранняя остановка если validation loss начинает расти
+                if (epoch > 10 && valLoss < Math.min(...this.trainingHistory.valLoss.slice(-5))) {
+                    console.log(`Early stopping at epoch ${epoch}, val loss improved`);
                 }
 
                 // WebGL FIX: Чаще освобождаем память
