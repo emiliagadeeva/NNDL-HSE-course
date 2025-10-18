@@ -11,7 +11,7 @@ class SalesForecastingApp {
     }
 
     initializeEventListeners() {
-        // File upload - ПРАВИЛЬНАЯ ИНИЦИАЛИЗАЦИЯ
+        // 🔥 ИСПРАВЛЕНИЕ: Правильная инициализация file upload
         const fileUpload = document.getElementById('fileUpload');
         const fileInput = document.getElementById('fileInput');
         
@@ -34,26 +34,18 @@ class SalesForecastingApp {
             fileUpload.classList.remove('dragover');
             const files = e.dataTransfer.files;
             if (files.length > 0) {
-                if (files[0].type === 'text/csv') {
-                    this.handleFileUpload(files[0]);
-                } else {
-                    alert('Please upload a CSV file');
-                }
+                this.handleFileUpload(files[0]);
             }
         });
         
         // Обработчик выбора файла
         fileInput.addEventListener('change', (e) => {
             if (e.target.files.length > 0) {
-                if (e.target.files[0].type === 'text/csv') {
-                    this.handleFileUpload(e.target.files[0]);
-                } else {
-                    alert('Please upload a CSV file');
-                }
+                this.handleFileUpload(e.target.files[0]);
             }
         });
 
-        // 🔥 ПРАВИЛЬНЫЕ ОБРАБОТЧИКИ СЛАЙДЕРОВ
+        // 🔥 ИСПРАВЛЕНИЕ: Правильные обработчики слайдеров
         const windowSizeSlider = document.getElementById('windowSize');
         const trainSplitSlider = document.getElementById('trainSplit');
         
@@ -67,7 +59,7 @@ class SalesForecastingApp {
             document.getElementById('trainSplitValue').textContent = e.target.value + '%';
         });
 
-        // Инициализация значений слайдеров при загрузке
+        // Инициализация значений слайдеров
         document.getElementById('windowSizeValue').textContent = windowSizeSlider.value;
         document.getElementById('trainSplitValue').textContent = trainSplitSlider.value + '%';
 
@@ -218,7 +210,7 @@ class SalesForecastingApp {
                 <input type="file" id="fileInput" accept=".csv" style="display: none;">
             `;
             
-            // 🔥 ПРАВИЛЬНОЕ ПЕРЕПОДКЛЮЧЕНИЕ СОБЫТИЙ
+            // 🔥 ИСПРАВЛЕНИЕ: Переподключаем события ПРАВИЛЬНО
             this.reattachFileUploadListeners();
             
             document.getElementById('trainBtn').disabled = false;
@@ -235,7 +227,7 @@ class SalesForecastingApp {
         }
     }
 
-    // 🔥 НОВЫЙ МЕТОД: Переподключение событий после изменения HTML
+    // 🔥 ИСПРАВЛЕНИЕ: Упрощенный метод переподключения
     reattachFileUploadListeners() {
         const fileUpload = document.getElementById('fileUpload');
         const fileInput = document.getElementById('fileInput');
@@ -258,21 +250,13 @@ class SalesForecastingApp {
             fileUpload.classList.remove('dragover');
             const files = e.dataTransfer.files;
             if (files.length > 0) {
-                if (files[0].type === 'text/csv') {
-                    this.handleFileUpload(files[0]);
-                } else {
-                    alert('Please upload a CSV file');
-                }
+                this.handleFileUpload(files[0]);
             }
         });
         
         fileInput.addEventListener('change', (e) => {
             if (e.target.files.length > 0) {
-                if (e.target.files[0].type === 'text/csv') {
-                    this.handleFileUpload(e.target.files[0]);
-                } else {
-                    alert('Please upload a CSV file');
-                }
+                this.handleFileUpload(e.target.files[0]);
             }
         });
     }
@@ -366,7 +350,7 @@ class SalesForecastingApp {
 
         // Рассчитываем разделение на train/val/test
         const trainRatio = trainSplit;
-        const valRatio = 0.15; // Фиксированное значение для валидации
+        const valRatio = 0.15;
         const testRatio = 1 - trainRatio - valRatio;
 
         console.log('Training with params:', {
@@ -387,7 +371,77 @@ class SalesForecastingApp {
                 return;
             }
 
-            // 🔥 ИСПРАВЛЕНИЕ: Проверяем, есть ли validation данные
-            if (this.trainingData.valX.length === 0) {
-                console.warn('No validation data available, using training data for validation');
-                // Если
+            // Create model
+            const inputShape = [windowSize, this.trainingData.featureNames.length];
+            await this.lstm.createModel(inputShape, lstmLayers, hiddenUnits, learningRate);
+
+            // Show progress
+            document.getElementById('trainingProgress').style.display = 'block';
+            document.getElementById('trainBtn').disabled = true;
+            document.getElementById('testBtn').disabled = true;
+
+            // Reset charts
+            this.lossChart.data.labels = [];
+            this.lossChart.data.datasets[0].data = [];
+            this.lossChart.data.datasets[1].data = [];
+            this.lossChart.update();
+
+            // Train model с валидационными данными
+            await this.lstm.trainModel(
+                this.trainingData.trainX,
+                this.trainingData.trainY,
+                this.trainingData.valX,
+                this.trainingData.valY,
+                epochs,
+                (epoch, totalEpochs, loss, valLoss) => {
+                    const progress = (epoch / totalEpochs) * 100;
+                    document.getElementById('progressFill').style.width = progress + '%';
+                    document.getElementById('progressText').textContent = 
+                        `Epoch: ${epoch}/${totalEpochs} - Loss: ${loss.toFixed(6)} - Val Loss: ${valLoss.toFixed(6)}`;
+                    
+                    // Update loss chart
+                    this.lossChart.data.labels.push(epoch);
+                    this.lossChart.data.datasets[0].data.push(loss);
+                    this.lossChart.data.datasets[1].data.push(valLoss);
+                    this.lossChart.update();
+                }
+            );
+
+            document.getElementById('trainBtn').disabled = false;
+            document.getElementById('testBtn').disabled = false;
+            alert('✅ Model training completed!');
+            
+        } catch (error) {
+            console.error('Training error:', error);
+            alert('❌ Error training model: ' + error.message);
+            document.getElementById('trainBtn').disabled = false;
+            document.getElementById('testBtn').disabled = false;
+        }
+    }
+
+    async testModel() {
+        if (!this.trainingData || !this.lstm.model) {
+            alert('Please train the model first');
+            return;
+        }
+
+        try {
+            document.getElementById('testBtn').disabled = true;
+            document.getElementById('testBtn').textContent = 'Testing...';
+            
+            console.log('Test data info:', {
+                testSamples: this.trainingData.testX.length,
+                storesInTest: [...new Set(this.trainingData.storeIndices)],
+                storeDistribution: this.countStores(this.trainingData.storeIndices)
+            });
+            
+            const predictions = await this.lstm.predict(this.trainingData.testX);
+            this.testResults = await this.lstm.evaluateByStore(
+                predictions,
+                this.trainingData.testY,
+                this.trainingData.storeIndices
+            );
+
+            console.log('Test results stores:', Object.keys(this.testResults));
+            
+            this.updateRMSEChart();
