@@ -80,14 +80,16 @@ class SalesForecastingApp {
                         borderColor: '#007bff',
                         backgroundColor: 'rgba(0, 123, 255, 0.1)',
                         data: [],
-                        fill: true
+                        fill: true,
+                        tension: 0.4
                     },
                     {
                         label: 'Validation Loss',
                         borderColor: '#28a745',
                         backgroundColor: 'rgba(40, 167, 69, 0.1)',
                         data: [],
-                        fill: true
+                        fill: true,
+                        tension: 0.4
                     }
                 ]
             },
@@ -146,7 +148,8 @@ class SalesForecastingApp {
                         backgroundColor: 'rgba(40, 167, 69, 0.1)',
                         data: [],
                         borderWidth: 2,
-                        pointRadius: 4
+                        pointRadius: 6,
+                        tension: 0.4
                     },
                     {
                         label: 'Predicted Sales',
@@ -154,8 +157,9 @@ class SalesForecastingApp {
                         backgroundColor: 'rgba(0, 123, 255, 0.1)',
                         data: [],
                         borderWidth: 2,
+                        pointRadius: 6,
                         borderDash: [5, 5],
-                        pointRadius: 4
+                        tension: 0.4
                     }
                 ]
             },
@@ -165,7 +169,12 @@ class SalesForecastingApp {
                 scales: {
                     y: {
                         beginAtZero: true,
-                        title: { display: true, text: 'Sales (millions)' }
+                        title: { display: true, text: 'Sales ($)' },
+                        ticks: {
+                            callback: function(value) {
+                                return '$' + value.toLocaleString();
+                            }
+                        }
                     }
                 }
             }
@@ -397,7 +406,7 @@ class SalesForecastingApp {
         const storeData = this.testResults[storeId];
         
         if (storeData.actuals.length > 0 && storeData.predictions.length > 0) {
-            // Denormalize sales data
+            // Денормализация данных продаж (умножаем на 1,000,000)
             const actualSales = storeData.actuals[0].map(val => val * 1000000);
             const predictedSales = storeData.predictions[0].map(val => val * 1000000);
             
