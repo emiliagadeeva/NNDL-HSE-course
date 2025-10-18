@@ -1,3 +1,5 @@
+[file name]: app.js
+[file content begin]
 class SalesForecastingApp {
     constructor() {
         this.dataLoader = new DataLoader();
@@ -356,16 +358,22 @@ class SalesForecastingApp {
         const learningRate = parseFloat(document.getElementById('learningRate').value);
         const epochs = parseInt(document.getElementById('epochs').value);
 
+        // Рассчитываем разделение на train/val/test
+        const trainRatio = trainSplit;
+        const valRatio = 0.15; // Фиксированное значение для валидации
+        const testRatio = 1 - trainRatio - valRatio;
+
         console.log('Training with params:', {
-            windowSize, trainSplit, lstmLayers, hiddenUnits, learningRate, epochs
+            windowSize, trainRatio, valRatio, testRatio, lstmLayers, hiddenUnits, learningRate, epochs
         });
 
         try {
-            // Prepare data
+            // Prepare data с правильным разделением
             this.trainingData = this.dataLoader.prepareSequences(
                 this.selectedStores, 
                 windowSize, 
-                trainSplit
+                trainRatio,
+                valRatio
             );
 
             if (this.trainingData.trainX.length === 0) {
@@ -388,13 +396,13 @@ class SalesForecastingApp {
             this.lossChart.data.datasets[1].data = [];
             this.lossChart.update();
 
-            // Train model with validation data
+            // Train model с валидационными данными
             await this.lstm.trainModel(
                 this.trainingData.trainX,
                 this.trainingData.trainY,
-                epochs,
-                this.trainingData.valX,  // validation data
+                this.trainingData.valX,
                 this.trainingData.valY,
+                epochs,
                 (epoch, totalEpochs, loss, valLoss) => {
                     const progress = (epoch / totalEpochs) * 100;
                     document.getElementById('progressFill').style.width = progress + '%';
@@ -404,7 +412,7 @@ class SalesForecastingApp {
                     // Update loss chart
                     this.lossChart.data.labels.push(epoch);
                     this.lossChart.data.datasets[0].data.push(loss);
-                    this.lossChart.data.datasets[1].data.push(valLoss);
+                    this.lossChart.data.datasets[1].data.push(valLoss || loss);
                     this.lossChart.update();
                 }
             );
@@ -533,3 +541,4 @@ document.addEventListener('DOMContentLoaded', () => {
     app = new SalesForecastingApp();
     console.log('Sales Forecasting App initialized');
 });
+[file content end]
