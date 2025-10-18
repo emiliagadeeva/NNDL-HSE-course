@@ -38,14 +38,21 @@ class SalesForecastingApp {
             }
         });
 
-        // Model controls
-        document.getElementById('windowSize').addEventListener('input', (e) => {
+        // Model controls - FIXED SLIDERS
+        const windowSizeSlider = document.getElementById('windowSize');
+        const trainSplitSlider = document.getElementById('trainSplit');
+        
+        windowSizeSlider.addEventListener('input', (e) => {
             document.getElementById('windowSizeValue').textContent = e.target.value;
         });
         
-        document.getElementById('trainSplit').addEventListener('input', (e) => {
+        trainSplitSlider.addEventListener('input', (e) => {
             document.getElementById('trainSplitValue').textContent = e.target.value + '%';
         });
+
+        // Initialize slider values
+        document.getElementById('windowSizeValue').textContent = windowSizeSlider.value;
+        document.getElementById('trainSplitValue').textContent = trainSplitSlider.value + '%';
 
         document.getElementById('trainBtn').addEventListener('click', () => this.trainModel());
         document.getElementById('testBtn').addEventListener('click', () => this.testModel());
@@ -53,6 +60,11 @@ class SalesForecastingApp {
         
         document.getElementById('storeChartSelect').addEventListener('change', (e) => {
             this.updatePredictionChart(e.target.value);
+        });
+
+        // Store selection
+        document.getElementById('storeSelect').addEventListener('change', (e) => {
+            this.updateSelectedStores();
         });
     }
 
@@ -67,18 +79,21 @@ class SalesForecastingApp {
                         label: 'Training Loss',
                         borderColor: '#007bff',
                         backgroundColor: 'rgba(0, 123, 255, 0.1)',
-                        data: []
+                        data: [],
+                        fill: true
                     },
                     {
                         label: 'Validation Loss',
                         borderColor: '#28a745',
                         backgroundColor: 'rgba(40, 167, 69, 0.1)',
-                        data: []
+                        data: [],
+                        fill: true
                     }
                 ]
             },
             options: {
                 responsive: true,
+                maintainAspectRatio: false,
                 scales: {
                     y: {
                         beginAtZero: true,
@@ -106,6 +121,7 @@ class SalesForecastingApp {
             },
             options: {
                 responsive: true,
+                maintainAspectRatio: false,
                 scales: {
                     y: {
                         beginAtZero: true,
@@ -128,19 +144,24 @@ class SalesForecastingApp {
                         label: 'Actual Sales',
                         borderColor: '#28a745',
                         backgroundColor: 'rgba(40, 167, 69, 0.1)',
-                        data: []
+                        data: [],
+                        borderWidth: 2,
+                        pointRadius: 4
                     },
                     {
                         label: 'Predicted Sales',
                         borderColor: '#007bff',
                         backgroundColor: 'rgba(0, 123, 255, 0.1)',
                         data: [],
-                        borderDash: [5, 5]
+                        borderWidth: 2,
+                        borderDash: [5, 5],
+                        pointRadius: 4
                     }
                 ]
             },
             options: {
                 responsive: true,
+                maintainAspectRatio: false,
                 scales: {
                     y: {
                         beginAtZero: true,
@@ -153,12 +174,34 @@ class SalesForecastingApp {
 
     async handleFileUpload(file) {
         try {
+            // Show loading state
+            document.getElementById('fileUpload').innerHTML = '<p>📊 Loading data...</p>';
+            
             const data = await this.dataLoader.loadCSV(file);
             this.showDataPreview();
             this.populateStoreSelect();
+            
+            // Reset file upload area
+            document.getElementById('fileUpload').innerHTML = `
+                <p>✅ Data loaded successfully!</p>
+                <p>📁 Drag & drop another CSV file here or click to select</p>
+                <input type="file" id="fileInput" accept=".csv" style="display: none;">
+            `;
+            
+            // Re-attach event listeners
+            document.getElementById('fileUpload').addEventListener('click', () => document.getElementById('fileInput').click());
+            
             document.getElementById('trainBtn').disabled = false;
+            
         } catch (error) {
-            alert('Error loading file: ' + error.message);
+            console.error('Error loading file:', error);
+            document.getElementById('fileUpload').innerHTML = `
+                <p>❌ Error loading file: ${error.message}</p>
+                <p>📁 Drag & drop CSV file here or click to select</p>
+                <input type="file" id="fileInput" accept=".csv" style="display: none;">
+            `;
+            // Re-attach event listeners
+            document.getElementById('fileUpload').addEventListener('click', () => document.getElementById('fileInput').click());
         }
     }
 
@@ -166,8 +209,13 @@ class SalesForecastingApp {
         const preview = this.dataLoader.getDataPreview(10);
         const previewTable = document.getElementById('previewTable');
         
+        if (preview.length === 0) {
+            previewTable.innerHTML = '<p>No data to display</p>';
+            return;
+        }
+        
         let html = '<table><thead><tr>';
-        Object.keys(preview[0] || {}).forEach(key => {
+        Object.keys(preview[0]).forEach(key => {
             if (key !== 'timestamp') html += `<th>${key}</th>`;
         });
         html += '</tr></thead><tbody>';
@@ -176,6 +224,10 @@ class SalesForecastingApp {
             html += '<tr>';
             Object.entries(row).forEach(([key, value]) => {
                 if (key !== 'timestamp') {
+                    // Format numbers to 2 decimal places
+                    if (typeof value === 'number') {
+                        value = value.toFixed(2);
+                    }
                     html += `<td>${value}</td>`;
                 }
             });
@@ -194,7 +246,10 @@ class SalesForecastingApp {
         storeSelect.innerHTML = '';
         chartSelect.innerHTML = '<option value="">Select a store...</option>';
         
-        this.dataLoader.getAllStores().forEach(storeId => {
+        const stores = this.dataLoader.getAllStores();
+        console.log('Available stores:', stores);
+        
+        stores.forEach(storeId => {
             const option1 = document.createElement('option');
             option1.value = storeId;
             option1.textContent = `Store ${storeId}`;
@@ -205,11 +260,26 @@ class SalesForecastingApp {
             option2.textContent = `Store ${storeId}`;
             chartSelect.appendChild(option2);
         });
+
+        // Select first few stores by default for demo
+        if (stores.length > 0) {
+            const defaultStores = stores.slice(0, Math.min(3, stores.length));
+            defaultStores.forEach(storeId => {
+                const option = Array.from(storeSelect.options).find(opt => parseInt(opt.value) === storeId);
+                if (option) option.selected = true;
+            });
+            this.updateSelectedStores();
+        }
+    }
+
+    updateSelectedStores() {
+        const selectedOptions = Array.from(document.getElementById('storeSelect').selectedOptions);
+        this.selectedStores = selectedOptions.map(option => parseInt(option.value));
+        console.log('Selected stores:', this.selectedStores);
     }
 
     async trainModel() {
-        const selectedOptions = Array.from(document.getElementById('storeSelect').selectedOptions);
-        this.selectedStores = selectedOptions.map(option => parseInt(option.value));
+        this.updateSelectedStores();
         
         if (this.selectedStores.length === 0) {
             alert('Please select at least one store');
@@ -223,45 +293,74 @@ class SalesForecastingApp {
         const learningRate = parseFloat(document.getElementById('learningRate').value);
         const epochs = parseInt(document.getElementById('epochs').value);
 
-        // Prepare data
-        this.trainingData = this.dataLoader.prepareSequences(
-            this.selectedStores, 
-            windowSize, 
-            trainSplit
-        );
+        console.log('Training parameters:', {
+            windowSize, trainSplit, lstmLayers, hiddenUnits, learningRate, epochs
+        });
 
-        // Create model
-        const inputShape = [windowSize, this.trainingData.featureNames.length];
-        await this.lstm.createModel(inputShape, lstmLayers, hiddenUnits, learningRate);
+        try {
+            // Prepare data
+            this.trainingData = this.dataLoader.prepareSequences(
+                this.selectedStores, 
+                windowSize, 
+                trainSplit
+            );
 
-        // Show progress
-        document.getElementById('trainingProgress').style.display = 'block';
-        document.getElementById('trainBtn').disabled = true;
-        document.getElementById('testBtn').disabled = true;
+            console.log('Training data prepared:', {
+                trainSamples: this.trainingData.trainX.length,
+                testSamples: this.trainingData.testX.length,
+                features: this.trainingData.featureNames
+            });
 
-        // Train model
-        await this.lstm.trainModel(
-            this.trainingData.trainX,
-            this.trainingData.trainY,
-            epochs,
-            0.1,
-            (epoch, totalEpochs, loss, valLoss) => {
-                const progress = (epoch / totalEpochs) * 100;
-                document.getElementById('progressFill').style.width = progress + '%';
-                document.getElementById('progressText').textContent = 
-                    `Epoch: ${epoch}/${totalEpochs} - Loss: ${loss.toFixed(6)}`;
-                
-                // Update loss chart
-                this.lossChart.data.labels.push(epoch);
-                this.lossChart.data.datasets[0].data.push(loss);
-                this.lossChart.data.datasets[1].data.push(valLoss);
-                this.lossChart.update();
+            if (this.trainingData.trainX.length === 0) {
+                alert('Not enough data for training. Try selecting more stores or reducing window size.');
+                return;
             }
-        );
 
-        document.getElementById('trainBtn').disabled = false;
-        document.getElementById('testBtn').disabled = false;
-        alert('Model training completed!');
+            // Create model
+            const inputShape = [windowSize, this.trainingData.featureNames.length];
+            await this.lstm.createModel(inputShape, lstmLayers, hiddenUnits, learningRate);
+
+            // Show progress
+            document.getElementById('trainingProgress').style.display = 'block';
+            document.getElementById('trainBtn').disabled = true;
+            document.getElementById('testBtn').disabled = true;
+
+            // Reset charts
+            this.lossChart.data.labels = [];
+            this.lossChart.data.datasets[0].data = [];
+            this.lossChart.data.datasets[1].data = [];
+            this.lossChart.update();
+
+            // Train model
+            await this.lstm.trainModel(
+                this.trainingData.trainX,
+                this.trainingData.trainY,
+                epochs,
+                0.1,
+                (epoch, totalEpochs, loss, valLoss) => {
+                    const progress = (epoch / totalEpochs) * 100;
+                    document.getElementById('progressFill').style.width = progress + '%';
+                    document.getElementById('progressText').textContent = 
+                        `Epoch: ${epoch}/${totalEpochs} - Loss: ${loss.toFixed(6)}`;
+                    
+                    // Update loss chart
+                    this.lossChart.data.labels.push(epoch);
+                    this.lossChart.data.datasets[0].data.push(loss);
+                    this.lossChart.data.datasets[1].data.push(valLoss || loss);
+                    this.lossChart.update();
+                }
+            );
+
+            document.getElementById('trainBtn').disabled = false;
+            document.getElementById('testBtn').disabled = false;
+            alert('✅ Model training completed!');
+            
+        } catch (error) {
+            console.error('Training error:', error);
+            alert('❌ Error training model: ' + error.message);
+            document.getElementById('trainBtn').disabled = false;
+            document.getElementById('testBtn').disabled = false;
+        }
     }
 
     async testModel() {
@@ -271,6 +370,9 @@ class SalesForecastingApp {
         }
 
         try {
+            document.getElementById('testBtn').disabled = true;
+            document.getElementById('testBtn').textContent = 'Testing...';
+            
             const predictions = await this.lstm.predict(this.trainingData.testX);
             this.testResults = await this.lstm.evaluateByStore(
                 predictions,
@@ -278,18 +380,26 @@ class SalesForecastingApp {
                 this.trainingData.storeIndices
             );
 
+            console.log('Test results:', this.testResults);
             this.updateRMSEChart();
             document.getElementById('exportBtn').disabled = false;
-            alert('Model testing completed!');
+            
+            document.getElementById('testBtn').disabled = false;
+            document.getElementById('testBtn').textContent = '🧪 Test Model';
+            
+            alert('✅ Model testing completed!');
         } catch (error) {
-            alert('Error testing model: ' + error.message);
+            console.error('Testing error:', error);
+            alert('❌ Error testing model: ' + error.message);
+            document.getElementById('testBtn').disabled = false;
+            document.getElementById('testBtn').textContent = '🧪 Test Model';
         }
     }
 
     updateRMSEChart() {
         if (!this.testResults) return;
 
-        // Get top 10 stores by RMSE
+        // Get top 10 stores by RMSE (worst performers)
         const topStores = Object.entries(this.testResults)
             .sort(([, a], [, b]) => b.rmse - a.rmse)
             .slice(0, 10);
@@ -297,17 +407,29 @@ class SalesForecastingApp {
         this.rmseChart.data.labels = topStores.map(([storeId]) => `Store ${storeId}`);
         this.rmseChart.data.datasets[0].data = topStores.map(([, data]) => data.rmse);
         this.rmseChart.update();
+
+        console.log('Top 10 stores by RMSE:', topStores);
     }
 
     updatePredictionChart(storeId) {
-        if (!this.testResults || !storeId || !this.testResults[storeId]) return;
+        if (!this.testResults || !storeId || !this.testResults[storeId]) {
+            // Clear chart if no data
+            this.predictionChart.data.datasets[0].data = [];
+            this.predictionChart.data.datasets[1].data = [];
+            this.predictionChart.update();
+            return;
+        }
 
         const storeData = this.testResults[storeId];
         
         // Use the first prediction/actual pair for demonstration
         if (storeData.actuals.length > 0 && storeData.predictions.length > 0) {
-            this.predictionChart.data.datasets[0].data = storeData.actuals[0];
-            this.predictionChart.data.datasets[1].data = storeData.predictions[0];
+            // Denormalize sales data (multiply by 1,000,000)
+            const actualSales = storeData.actuals[0].map(val => val * 1000000);
+            const predictedSales = storeData.predictions[0].map(val => val * 1000000);
+            
+            this.predictionChart.data.datasets[0].data = actualSales;
+            this.predictionChart.data.datasets[1].data = predictedSales;
             this.predictionChart.update();
         }
     }
@@ -318,17 +440,22 @@ class SalesForecastingApp {
             return;
         }
 
-        let csvContent = 'Store,RMSE\n';
+        let csvContent = 'Store,RMSE,Predictions (3 weeks)\n';
         Object.entries(this.testResults).forEach(([storeId, data]) => {
-            csvContent += `${storeId},${data.rmse.toFixed(6)}\n`;
+            const predictionsStr = data.predictions.map(pred => 
+                pred.map(val => (val * 1000000).toFixed(2)).join(';')
+            ).join('|');
+            csvContent += `${storeId},${data.rmse.toFixed(6)},"${predictionsStr}"\n`;
         });
 
-        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'sales_forecast_results.csv';
+        a.download = `sales_forecast_results_${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
         a.click();
+        document.body.removeChild(a);
         window.URL.revokeObjectURL(url);
     }
 }
