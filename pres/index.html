@@ -145,34 +145,30 @@
                 <select id="lstmLayers">
                     <option value="1">1 Layer</option>
                     <option value="2" selected>2 Layers</option>
-                    <option value="3">3 Layers</option>
                 </select>
             </div>
             
             <div class="control-group">
                 <label>Hidden Units:</label>
                 <select id="hiddenUnits">
-                    <option value="32">32 units</option>
-                    <option value="64" selected>64 units</option>
-                    <option value="128">128 units</option>
+                    <option value="16">16 units</option>
+                    <option value="32" selected>32 units</option>
                 </select>
             </div>
             
             <div class="control-group">
                 <label>Learning Rate:</label>
                 <select id="learningRate">
-                    <option value="0.001">0.001</option>
-                    <option value="0.005">0.005</option>
-                    <option value="0.01" selected>0.01</option>
+                    <option value="0.05">0.05</option>
+                    <option value="0.1" selected>0.1</option>
                 </select>
             </div>
             
             <div class="control-group">
                 <label>Epochs:</label>
                 <select id="epochs">
-                    <option value="50">50</option>
-                    <option value="100" selected>100</option>
-                    <option value="200">200</option>
+                    <option value="30">30</option>
+                    <option value="50" selected>50</option>
                 </select>
             </div>
         </div>
@@ -189,7 +185,7 @@
             <div class="progress-bar">
                 <div class="progress-fill" id="progressFill"></div>
             </div>
-            <div id="progressText">Epoch: 0/100 - Loss: -</div>
+            <div id="progressText">Epoch: 0/50 - Loss: -</div>
         </div>
     </div>
 
