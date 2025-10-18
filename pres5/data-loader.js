@@ -108,92 +108,101 @@ class DataLoader {
         return this.data.slice(0, limit);
     }
 
-    prepareSequences(storeIds, windowSize, testSplit = 0.8) {
-        const sequences = [];
-        const targets = [];
-        const storeIndices = [];
+   prepareSequences(storeIds, windowSize, trainSplit = 0.7) {
+    const sequences = [];
+    const targets = [];
+    const storeIndices = [];
+    const sequenceDates = []; // 🔥 НОВОЕ: храним даты последовательностей
 
-        storeIds.forEach(storeId => {
-            const storeData = this.getStoreData(storeId);
-            if (storeData.length < windowSize + 3) {
-                console.log(`Skipping store ${storeId}: insufficient data (${storeData.length} records)`);
-                return;
+    storeIds.forEach(storeId => {
+        const storeData = this.getStoreData(storeId);
+        if (storeData.length < windowSize + 3) {
+            console.log(`Skipping store ${storeId}: insufficient data (${storeData.length} records)`);
+            return;
+        }
+
+        // Создаем последовательности для каждого магазина
+        const storeSequences = [];
+        const storeTargets = [];
+        const storeSequenceDates = [];
+        
+        for (let i = 0; i < storeData.length - windowSize - 2; i++) {
+            const sequence = [];
+            for (let j = 0; j < windowSize; j++) {
+                const point = storeData[i + j];
+                const features = this.features.map(feat => {
+                    // Правильная нормализация
+                    if (feat === 'Weekly_Sales') return point[feat] / 1000000;
+                    if (feat === 'Temperature') return point[feat] / 100;
+                    if (feat === 'Fuel_Price') return point[feat] / 10;
+                    if (feat === 'CPI') return point[feat] / 1000;
+                    if (feat === 'Unemployment') return point[feat] / 20;
+                    return point[feat];
+                });
+                sequence.push(features);
             }
-
-            // Создаем последовательности для каждого магазина
-            const storeSequences = [];
-            const storeTargets = [];
             
-            for (let i = 0; i < storeData.length - windowSize - 2; i++) {
-                const sequence = [];
-                for (let j = 0; j < windowSize; j++) {
-                    const point = storeData[i + j];
-                    const features = this.features.map(feat => {
-                        // Правильная нормализация
-                        if (feat === 'Weekly_Sales') return point[feat] / 1000000;
-                        if (feat === 'Temperature') return point[feat] / 100;
-                        if (feat === 'Fuel_Price') return point[feat] / 10;
-                        if (feat === 'CPI') return point[feat] / 1000;
-                        if (feat === 'Unemployment') return point[feat] / 20;
-                        return point[feat];
-                    });
-                    sequence.push(features);
-                }
-                
-                const target = [
-                    storeData[i + windowSize].Weekly_Sales / 1000000,
-                    storeData[i + windowSize + 1].Weekly_Sales / 1000000,
-                    storeData[i + windowSize + 2].Weekly_Sales / 1000000
-                ];
+            const target = [
+                storeData[i + windowSize].Weekly_Sales / 1000000,
+                storeData[i + windowSize + 1].Weekly_Sales / 1000000,
+                storeData[i + windowSize + 2].Weekly_Sales / 1000000
+            ];
 
-                storeSequences.push(sequence);
-                storeTargets.push(target);
-            }
-
-            // Добавляем все последовательности магазина с его ID
-            sequences.push(...storeSequences);
-            targets.push(...storeTargets);
-            storeIndices.push(...Array(storeSequences.length).fill(storeId));
-        });
-
-        if (sequences.length === 0) {
-            throw new Error('No sequences generated. Check if stores have enough data.');
+            storeSequences.push(sequence);
+            storeTargets.push(target);
+            storeSequenceDates.push(storeData[i + windowSize].timestamp); // 🔥 Дата начала предсказания
         }
 
-        // 🔥 ПЕРЕМЕШИВАНИЕ: Перемешиваем данные перед разделением
-        const shuffled = this.shuffleArrays(sequences, targets, storeIndices);
-        
-        const splitIndex = Math.floor(shuffled.sequences.length * testSplit);
-        
-        console.log(`Generated ${shuffled.sequences.length} sequences from ${storeIds.length} stores`);
-        console.log('Store distribution in test set:', this.countStores(shuffled.storeIndices.slice(splitIndex)));
-        
-        return {
-            trainX: shuffled.sequences.slice(0, splitIndex),
-            trainY: shuffled.targets.slice(0, splitIndex),
-            testX: shuffled.sequences.slice(splitIndex),
-            testY: shuffled.targets.slice(splitIndex),
-            storeIndices: shuffled.storeIndices.slice(splitIndex),
-            featureNames: this.features
-        };
+        // Добавляем все последовательности магазина с его ID
+        sequences.push(...storeSequences);
+        targets.push(...storeTargets);
+        storeIndices.push(...Array(storeSequences.length).fill(storeId));
+        sequenceDates.push(...storeSequenceDates);
+    });
+
+    if (sequences.length === 0) {
+        throw new Error('No sequences generated. Check if stores have enough data.');
     }
 
-    // 🔥 НОВЫЙ МЕТОД: Перемешивание данных Fisher-Yates
-    shuffleArrays(sequences, targets, storeIndices) {
-        const indices = Array.from({length: sequences.length}, (_, i) => i);
-        
-        // Fisher-Yates shuffle algorithm
-        for (let i = indices.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [indices[i], indices[j]] = [indices[j], indices[i]];
-        }
-        
-        return {
-            sequences: indices.map(i => sequences[i]),
-            targets: indices.map(i => targets[i]),
-            storeIndices: indices.map(i => storeIndices[i])
-        };
-    }
+    // 🔥 ИСПРАВЛЕНИЕ: Сортируем по дате вместо перемешивания
+    const sorted = this.sortByDate(sequences, targets, storeIndices, sequenceDates);
+    
+    const trainEnd = Math.floor(sorted.sequences.length * trainSplit);
+    const valEnd = trainEnd + Math.floor(sorted.sequences.length * 0.15);
+    
+    console.log(`Generated ${sorted.sequences.length} sequences from ${storeIds.length} stores`);
+    console.log('Split:', {
+        train: trainEnd,
+        val: valEnd - trainEnd, 
+        test: sorted.sequences.length - valEnd
+    });
+    
+    return {
+        trainX: sorted.sequences.slice(0, trainEnd),
+        trainY: sorted.targets.slice(0, trainEnd),
+        valX: sorted.sequences.slice(trainEnd, valEnd),
+        valY: sorted.targets.slice(trainEnd, valEnd),
+        testX: sorted.sequences.slice(valEnd),
+        testY: sorted.targets.slice(valEnd),
+        storeIndices: sorted.storeIndices.slice(valEnd), // test store indices
+        featureNames: this.features
+    };
+}
+
+// 🔥 НОВЫЙ МЕТОД: Сортировка по дате
+sortByDate(sequences, targets, storeIndices, sequenceDates) {
+    const indices = Array.from({length: sequences.length}, (_, i) => i);
+    
+    // Сортируем индексы по дате (от старых к новым)
+    indices.sort((a, b) => sequenceDates[a] - sequenceDates[b]);
+    
+    return {
+        sequences: indices.map(i => sequences[i]),
+        targets: indices.map(i => targets[i]),
+        storeIndices: indices.map(i => storeIndices[i])
+    };
+}
+    
 
     // 🔥 НОВЫЙ МЕТОД: Подсчет магазинов в наборе данных
     countStores(storeIndices) {
