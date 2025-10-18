@@ -11,58 +11,73 @@ class SalesForecastingApp {
     }
 
     initializeEventListeners() {
-        // File upload
+        // File upload - ПРАВИЛЬНАЯ ИНИЦИАЛИЗАЦИЯ
         const fileUpload = document.getElementById('fileUpload');
         const fileInput = document.getElementById('fileInput');
         
-        fileUpload.addEventListener('click', () => fileInput.click());
+        // Обработчики для drag & drop
+        fileUpload.addEventListener('click', () => {
+            fileInput.click();
+        });
+        
         fileUpload.addEventListener('dragover', (e) => {
             e.preventDefault();
             fileUpload.classList.add('dragover');
         });
+        
         fileUpload.addEventListener('dragleave', () => {
             fileUpload.classList.remove('dragover');
         });
+        
         fileUpload.addEventListener('drop', (e) => {
             e.preventDefault();
             fileUpload.classList.remove('dragover');
             const files = e.dataTransfer.files;
-            if (files.length > 0) {
+            if (files.length > 0 && files[0].type === 'text/csv') {
                 this.handleFileUpload(files[0]);
+            } else {
+                alert('Please upload a CSV file');
             }
         });
         
+        // Обработчик выбора файла
         fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
+            if (e.target.files.length > 0 && e.target.files[0].type === 'text/csv') {
                 this.handleFileUpload(e.target.files[0]);
+            } else if (e.target.files.length > 0) {
+                alert('Please upload a CSV file');
             }
         });
 
-        // Model controls
+        // 🔥 ПРАВИЛЬНЫЕ ОБРАБОТЧИКИ СЛАЙДЕРОВ
         const windowSizeSlider = document.getElementById('windowSize');
         const trainSplitSlider = document.getElementById('trainSplit');
         
+        // Слайдер размера окна
         windowSizeSlider.addEventListener('input', (e) => {
             document.getElementById('windowSizeValue').textContent = e.target.value;
         });
         
+        // Слайдер разделения train/test
         trainSplitSlider.addEventListener('input', (e) => {
             document.getElementById('trainSplitValue').textContent = e.target.value + '%';
         });
 
-        // Initialize slider values
+        // Инициализация значений слайдеров
         document.getElementById('windowSizeValue').textContent = windowSizeSlider.value;
         document.getElementById('trainSplitValue').textContent = trainSplitSlider.value + '%';
 
+        // Кнопки управления
         document.getElementById('trainBtn').addEventListener('click', () => this.trainModel());
         document.getElementById('testBtn').addEventListener('click', () => this.testModel());
         document.getElementById('exportBtn').addEventListener('click', () => this.exportResults());
         
+        // Выбор магазина для графика
         document.getElementById('storeChartSelect').addEventListener('change', (e) => {
             this.updatePredictionChart(e.target.value);
         });
 
-        // Store selection
+        // Выбор магазинов для обучения
         document.getElementById('storeSelect').addEventListener('change', (e) => {
             this.updateSelectedStores();
         });
@@ -183,22 +198,27 @@ class SalesForecastingApp {
 
     async handleFileUpload(file) {
         try {
+            console.log('Starting file upload...');
             document.getElementById('fileUpload').innerHTML = '<p>📊 Loading data...</p>';
             
             const data = await this.dataLoader.loadCSV(file);
+            console.log('Data loaded successfully');
+            
             this.showDataPreview();
             this.populateStoreSelect();
             
+            // Восстанавливаем оригинальный HTML
             document.getElementById('fileUpload').innerHTML = `
                 <p>✅ Data loaded successfully!</p>
                 <p>📁 Drag & drop another CSV file here or click to select</p>
                 <input type="file" id="fileInput" accept=".csv" style="display: none;">
             `;
             
-            // Re-attach event listeners
-            document.getElementById('fileUpload').addEventListener('click', () => document.getElementById('fileInput').click());
+            // 🔥 ПРАВИЛЬНОЕ ПЕРЕПОДКЛЮЧЕНИЕ СОБЫТИЙ
+            this.reattachFileUploadListeners();
             
             document.getElementById('trainBtn').disabled = false;
+            console.log('File upload completed successfully');
             
         } catch (error) {
             console.error('Error loading file:', error);
@@ -207,16 +227,59 @@ class SalesForecastingApp {
                 <p>📁 Drag & drop CSV file here or click to select</p>
                 <input type="file" id="fileInput" accept=".csv" style="display: none;">
             `;
-            document.getElementById('fileUpload').addEventListener('click', () => document.getElementById('fileInput').click());
+            this.reattachFileUploadListeners();
         }
+    }
+
+    // 🔥 НОВЫЙ МЕТОД: Переподключение событий после изменения HTML
+    reattachFileUploadListeners() {
+        const fileUpload = document.getElementById('fileUpload');
+        const fileInput = document.getElementById('fileInput');
+        
+        fileUpload.addEventListener('click', () => {
+            fileInput.click();
+        });
+        
+        fileUpload.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            fileUpload.classList.add('dragover');
+        });
+        
+        fileUpload.addEventListener('dragleave', () => {
+            fileUpload.classList.remove('dragover');
+        });
+        
+        fileUpload.addEventListener('drop', (e) => {
+            e.preventDefault();
+            fileUpload.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0 && files[0].type === 'text/csv') {
+                this.handleFileUpload(files[0]);
+            } else {
+                alert('Please upload a CSV file');
+            }
+        });
+        
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0 && e.target.files[0].type === 'text/csv') {
+                this.handleFileUpload(e.target.files[0]);
+            } else if (e.target.files.length > 0) {
+                alert('Please upload a CSV file');
+            }
+        });
     }
 
     showDataPreview() {
         const preview = this.dataLoader.getDataPreview(10);
         const previewTable = document.getElementById('previewTable');
         
+        if (preview.length === 0) {
+            previewTable.innerHTML = '<p>No data available</p>';
+            return;
+        }
+        
         let html = '<table><thead><tr>';
-        Object.keys(preview[0] || {}).forEach(key => {
+        Object.keys(preview[0]).forEach(key => {
             if (key !== 'timestamp') html += `<th>${key}</th>`;
         });
         html += '</tr></thead><tbody>';
@@ -261,8 +324,8 @@ class SalesForecastingApp {
             chartSelect.appendChild(option2);
         });
 
-        // 🔥 ФИКС: Выбираем больше магазинов по умолчанию
-        const defaultStores = stores.slice(0, Math.min(8, stores.length));
+        // Выбираем больше магазинов по умолчанию
+        const defaultStores = stores.slice(0, Math.min(5, stores.length));
         defaultStores.forEach(storeId => {
             const option = Array.from(storeSelect.options).find(opt => parseInt(opt.value) === storeId);
             if (option) option.selected = true;
@@ -292,6 +355,10 @@ class SalesForecastingApp {
         const hiddenUnits = parseInt(document.getElementById('hiddenUnits').value);
         const learningRate = parseFloat(document.getElementById('learningRate').value);
         const epochs = parseInt(document.getElementById('epochs').value);
+
+        console.log('Training with params:', {
+            windowSize, trainSplit, lstmLayers, hiddenUnits, learningRate, epochs
+        });
 
         try {
             // Prepare data
@@ -396,11 +463,9 @@ class SalesForecastingApp {
     updateRMSEChart() {
         if (!this.testResults) return;
 
-        // 🔥 ФИКС: Показываем все магазины из результатов
         const allStores = Object.entries(this.testResults)
             .sort(([, a], [, b]) => b.rmse - a.rmse);
 
-        // Ограничиваем максимум 10 магазинами для читаемости
         const displayStores = allStores.slice(0, Math.min(10, allStores.length));
         
         this.rmseChart.data.labels = displayStores.map(([storeId]) => `Store ${storeId}`);
@@ -408,7 +473,6 @@ class SalesForecastingApp {
         this.rmseChart.update();
 
         console.log('All stores in results:', allStores.map(([storeId]) => storeId));
-        console.log('RMSE values:', allStores.map(([, data]) => data.rmse));
     }
 
     updatePredictionChart(storeId) {
@@ -422,7 +486,6 @@ class SalesForecastingApp {
         const storeData = this.testResults[storeId];
         
         if (storeData.actuals.length > 0 && storeData.predictions.length > 0) {
-            // Денормализация данных продаж
             const actualSales = storeData.actuals[0].map(val => val * 1000000);
             const predictedSales = storeData.predictions[0].map(val => val * 1000000);
             
@@ -430,6 +493,14 @@ class SalesForecastingApp {
             this.predictionChart.data.datasets[1].data = predictedSales;
             this.predictionChart.update();
         }
+    }
+
+    countStores(storeIndices) {
+        const count = {};
+        storeIndices.forEach(storeId => {
+            count[storeId] = (count[storeId] || 0) + 1;
+        });
+        return count;
     }
 
     exportResults() {
@@ -443,4 +514,21 @@ class SalesForecastingApp {
             csvContent += `${storeId},${data.rmse.toFixed(6)}\n`;
         });
 
-        const blob = new Blob([csvContent
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `sales_forecast_results_${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    }
+}
+
+// Инициализация приложения
+let app;
+document.addEventListener('DOMContentLoaded', () => {
+    app = new SalesForecastingApp();
+    console.log('Sales Forecasting App initialized');
+});
