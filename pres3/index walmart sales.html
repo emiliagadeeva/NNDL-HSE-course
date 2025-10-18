@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sales Forecasting LSTM</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .file-upload {
+            border: 2px dashed #ccc;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 20px;
+            cursor: pointer;
+        }
+        .file-upload.dragover {
+            border-color: #007bff;
+            background-color: #f0f8ff;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background-color: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .progress-fill {
+            height: 100%;
+            background-color: #28a745;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        .charts-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .chart-container {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 1px 5px rgba(0,0,0,0.1);
+            height: 300px;
+            position: relative;
+        }
+        .chart-container canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
+        .chart-container[style*="grid-column"] {
+            height: 400px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f8f9fa;
+        }
+        .controls {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin: 15px 0;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        select, input {
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        .info-text {
+            background: #e7f3ff;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border-left: 4px solid #007bff;
+        }
+    </style>
+</head>
+<body>
+    <h1>📈 Sales Forecasting with LSTM</h1>
+    
+    <div class="container">
+        <h2>1. Data Management</h2>
+        <div class="info-text">
+            <strong>New: Chronological Split</strong> - Data is now split by time: earlier periods for training, later periods for testing.
+            This prevents data leakage and provides realistic validation metrics.
+        </div>
+        <div class="file-upload" id="fileUpload">
+            <p>📁 Drag & drop your CSV file here or click to select</p>
+            <input type="file" id="fileInput" accept=".csv" style="display: none;">
+        </div>
+        
+        <div id="dataPreview" style="display: none;">
+            <h3>Data Preview</h3>
+            <div id="previewTable"></div>
+            
+            <div class="control-group">
+                <label>Select Stores:</label>
+                <select id="storeSelect" multiple style="height: 100px;">
+                    <!-- Stores will be populated dynamically -->
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>2. Model Configuration</h2>
+        <div class="controls">
+            <div class="control-group">
+                <label>Window Size (weeks):</label>
+                <input type="range" id="windowSize" min="4" max="16" value="12">
+                <span id="windowSizeValue">12</span>
+            </div>
+            
+            <div class="control-group">
+                <label>Test Set Size:</label>
+                <input type="range" id="trainSplit" min="10" max="40" value="20">
+                <span id="trainSplitValue">20%</span>
+                <small>Percentage of latest data for testing</small>
+            </div>
+            
+            <div class="control-group">
+                <label>LSTM Layers:</label>
+                <select id="lstmLayers">
+                    <option value="1">1 Layer</option>
+                    <option value="2" selected>2 Layers</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label>Hidden Units:</label>
+                <select id="hiddenUnits">
+                    <option value="16">16 units</option>
+                    <option value="32" selected>32 units</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label>Learning Rate:</label>
+                <select id="learningRate">
+                    <option value="0.05">0.05</option>
+                    <option value="0.1" selected>0.1</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label>Epochs:</label>
+                <select id="epochs">
+                    <option value="30">30</option>
+                    <option value="50" selected>50</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>3. Model Training & Testing</h2>
+        <button id="trainBtn" disabled>🚀 Train Model</button>
+        <button id="testBtn" disabled>🧪 Test Model</button>
+        <button id="exportBtn" disabled>📤 Export Results</button>
+        
+        <div id="trainingProgress" style="display: none;">
+            <h4>Training Progress</h4>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div id="progressText">Epoch: 0/50 - Loss: - - Val Loss: -</div>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>4. Results & Visualization</h2>
+        <div class="charts-container">
+            <div class="chart-container">
+                <h4>Training Progress (Loss)</h4>
+                <canvas id="lossChart"></canvas>
+            </div>
+            <div class="chart-container">
+                <h4>Top 10 Stores by RMSE</h4>
+                <canvas id="rmseChart"></canvas>
+            </div>
+            <div class="chart-container" style="grid-column: 1 / -1;">
+                <h4>Predictions vs Actual</h4>
+                <select id="storeChartSelect">
+                    <option value="">Select a store...</option>
+                </select>
+                <canvas id="predictionChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script src="data-loader walmart sales.js"></script>
+    <script src="walmart sales.js"></script>
+    <script src="app walmart sales.js"></script>
+</body>
+</html>
