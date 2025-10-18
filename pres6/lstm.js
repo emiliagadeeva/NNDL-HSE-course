@@ -1,3 +1,5 @@
+[file name]: lstm.js
+[file content begin]
 class LSTMForecaster {
     constructor() {
         this.model = null;
@@ -178,3 +180,4 @@ class LSTMForecaster {
         }
     }
 }
+[file content end]
