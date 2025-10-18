@@ -1,5 +1,3 @@
-[file name]: data-loader.js
-[file content begin]
 class DataLoader {
     constructor() {
         this.data = null;
@@ -205,5 +203,3 @@ class DataLoader {
         return count;
     }
 }
-[file content end]
-
