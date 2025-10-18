@@ -126,10 +126,25 @@ class DataLoader {
                 return;
             }
 
+            // 🔥 ИСПРАВЛЕНИЕ: Убедимся, что у нас достаточно данных для всех разделов
+            const minRequiredData = windowSize + 10; // Минимум 10 последовательностей
+            if (storeData.length < minRequiredData) {
+                console.log(`Skipping store ${storeId}: insufficient data for proper splitting`);
+                return;
+            }
+
             // Разделяем данные магазина на train/val/test по времени
             const totalSequences = storeData.length - windowSize - 2;
-            const trainEnd = Math.floor(totalSequences * trainSplit);
-            const valEnd = trainEnd + Math.floor(totalSequences * valSplit);
+            
+            // 🔥 ИСПРАВЛЕНИЕ: Гарантируем минимум 1 последовательность в каждом разделе
+            const trainEnd = Math.max(1, Math.floor(totalSequences * trainSplit));
+            const valEnd = trainEnd + Math.max(1, Math.floor(totalSequences * valSplit));
+
+            // Ограничиваем, чтобы не выйти за границы
+            const safeValEnd = Math.min(valEnd, totalSequences - 1);
+            const safeTrainEnd = Math.min(trainEnd, safeValEnd - 1);
+
+            console.log(`Store ${storeId}: ${totalSequences} total sequences, train: 0-${safeTrainEnd}, val: ${safeTrainEnd}-${safeValEnd}, test: ${safeValEnd}-${totalSequences}`);
 
             // Создаем последовательности для каждого раздела
             for (let i = 0; i < totalSequences; i++) {
@@ -155,11 +170,11 @@ class DataLoader {
                 ];
 
                 // Распределяем по наборам данных в зависимости от позиции во времени
-                if (i < trainEnd) {
+                if (i < safeTrainEnd) {
                     trainSequences.push(sequence);
                     trainTargets.push(target);
                     trainStoreIndices.push(storeId);
-                } else if (i < valEnd) {
+                } else if (i < safeValEnd) {
                     valSequences.push(sequence);
                     valTargets.push(target);
                     valStoreIndices.push(storeId);
@@ -189,7 +204,7 @@ class DataLoader {
             valY: valTargets,
             testX: testSequences,
             testY: testTargets,
-            storeIndices: testStoreIndices, // Для тестирования используем test store indices
+            storeIndices: testStoreIndices,
             featureNames: this.features
         };
     }
