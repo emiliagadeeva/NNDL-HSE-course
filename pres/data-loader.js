@@ -122,18 +122,18 @@ class DataLoader {
                 for (let j = 0; j < windowSize; j++) {
                     const point = storeData[i + j];
                     const features = this.features.map(feat => {
-                        // Normalize features
+                        // Правильная нормализация
                         if (feat === 'Weekly_Sales') return point[feat] / 1000000;
                         if (feat === 'Temperature') return point[feat] / 100;
-                        if (feat === 'Fuel_Price') return point[feat] / 5;
-                        if (feat === 'CPI') return point[feat] / 300;
-                        if (feat === 'Unemployment') return point[feat] / 15;
+                        if (feat === 'Fuel_Price') return point[feat] / 10;
+                        if (feat === 'CPI') return point[feat] / 1000;
+                        if (feat === 'Unemployment') return point[feat] / 20;
                         return point[feat];
                     });
                     sequence.push(features);
                 }
                 
-                // Target: next 3 weeks of sales
+                // Target: next 3 weeks of sales (также нормализованные)
                 const target = [
                     storeData[i + windowSize].Weekly_Sales / 1000000,
                     storeData[i + windowSize + 1].Weekly_Sales / 1000000,
@@ -146,8 +146,9 @@ class DataLoader {
             }
         });
 
-        // Split data
         const splitIndex = Math.floor(sequences.length * testSplit);
+        
+        console.log(`Generated ${sequences.length} sequences`);
         
         return {
             trainX: sequences.slice(0, splitIndex),
