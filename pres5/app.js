@@ -11,36 +11,12 @@ class SalesForecastingApp {
     }
 
     initializeEventListeners() {
-        // 🔥 ПРОСТАЯ И РАБОЧАЯ инициализация file upload
-        this.setupFileUpload();
-        
-        // 🔥 ПРОСТЫЕ И РАБОЧИЕ обработчики слайдеров
-        this.setupSliders();
-        
-        // Кнопки управления
-        document.getElementById('trainBtn').addEventListener('click', () => this.trainModel());
-        document.getElementById('testBtn').addEventListener('click', () => this.testModel());
-        document.getElementById('exportBtn').addEventListener('click', () => this.exportResults());
-        
-        // Выбор магазина для графика
-        document.getElementById('storeChartSelect').addEventListener('change', (e) => {
-            this.updatePredictionChart(e.target.value);
-        });
-
-        // Выбор магазинов для обучения
-        document.getElementById('storeSelect').addEventListener('change', (e) => {
-            this.updateSelectedStores();
-        });
-    }
-
-    setupFileUpload() {
+        // 🔥 ФИКС: Инициализация file upload БЕЗ переподключения
         const fileUpload = document.getElementById('fileUpload');
         const fileInput = document.getElementById('fileInput');
         
-        // Клик по области загрузки
         fileUpload.addEventListener('click', () => fileInput.click());
         
-        // Drag & drop
         fileUpload.addEventListener('dragover', (e) => {
             e.preventDefault();
             fileUpload.classList.add('dragover');
@@ -53,24 +29,22 @@ class SalesForecastingApp {
         fileUpload.addEventListener('drop', (e) => {
             e.preventDefault();
             fileUpload.classList.remove('dragover');
-            if (e.dataTransfer.files.length > 0) {
-                this.handleFileUpload(e.dataTransfer.files[0]);
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                this.handleFileUpload(files[0]);
             }
         });
         
-        // Выбор файла через input
         fileInput.addEventListener('change', (e) => {
             if (e.target.files.length > 0) {
                 this.handleFileUpload(e.target.files[0]);
             }
         });
-    }
 
-    setupSliders() {
+        // 🔥 ФИКС: Слайдеры - простые и работающие обработчики
         const windowSizeSlider = document.getElementById('windowSize');
         const trainSplitSlider = document.getElementById('trainSplit');
         
-        // Обработчики для слайдеров
         windowSizeSlider.addEventListener('input', (e) => {
             document.getElementById('windowSizeValue').textContent = e.target.value;
         });
@@ -78,10 +52,24 @@ class SalesForecastingApp {
         trainSplitSlider.addEventListener('input', (e) => {
             document.getElementById('trainSplitValue').textContent = e.target.value + '%';
         });
-        
+
         // Устанавливаем начальные значения
         document.getElementById('windowSizeValue').textContent = windowSizeSlider.value;
         document.getElementById('trainSplitValue').textContent = trainSplitSlider.value + '%';
+
+        // Кнопки
+        document.getElementById('trainBtn').addEventListener('click', () => this.trainModel());
+        document.getElementById('testBtn').addEventListener('click', () => this.testModel());
+        document.getElementById('exportBtn').addEventListener('click', () => this.exportResults());
+        
+        // Селекторы
+        document.getElementById('storeChartSelect').addEventListener('change', (e) => {
+            this.updatePredictionChart(e.target.value);
+        });
+
+        document.getElementById('storeSelect').addEventListener('change', (e) => {
+            this.updateSelectedStores();
+        });
     }
 
     initializeCharts() {
@@ -198,7 +186,12 @@ class SalesForecastingApp {
     }
 
     async handleFileUpload(file) {
-        // 🔥 ПРОВЕРКА ТИПА ФАЙЛА
+        // 🔥 ФИКС: Простая проверка типа файла
+        if (!file || !file.name) {
+            alert('Please select a valid file');
+            return;
+        }
+        
         if (!file.name.toLowerCase().endsWith('.csv')) {
             alert('Please upload a CSV file');
             return;
@@ -206,7 +199,9 @@ class SalesForecastingApp {
 
         try {
             console.log('Starting file upload...');
+            // 🔥 ФИКС: Не меняем HTML, только текст
             const fileUpload = document.getElementById('fileUpload');
+            const originalHTML = fileUpload.innerHTML;
             fileUpload.innerHTML = '<p>📊 Loading data...</p>';
             
             const data = await this.dataLoader.loadCSV(file);
@@ -215,29 +210,65 @@ class SalesForecastingApp {
             this.showDataPreview();
             this.populateStoreSelect();
             
-            // Восстанавливаем оригинальный HTML
-            fileUpload.innerHTML = `
-                <p>✅ Data loaded successfully!</p>
-                <p>📁 Drag & drop another CSV file here or click to select</p>
-                <input type="file" id="fileInput" accept=".csv" style="display: none;">
-            `;
-            
-            // 🔥 ПЕРЕПОДКЛЮЧАЕМ СОБЫТИЯ
-            this.setupFileUpload();
+            // 🔥 ФИКС: Восстанавливаем оригинальный HTML
+            fileUpload.innerHTML = originalHTML;
             
             document.getElementById('trainBtn').disabled = false;
             console.log('File upload completed successfully');
             
         } catch (error) {
             console.error('Error loading file:', error);
+            // 🔥 ФИКС: Восстанавливаем оригинальный HTML при ошибке
             const fileUpload = document.getElementById('fileUpload');
             fileUpload.innerHTML = `
                 <p>❌ Error loading file: ${error.message}</p>
                 <p>📁 Drag & drop CSV file here or click to select</p>
                 <input type="file" id="fileInput" accept=".csv" style="display: none;">
             `;
-            this.setupFileUpload();
+            
+            // 🔥 ФИКС: Переподключаем события ПРОСТЫМ способом
+            this.reinitializeFileUpload();
         }
+    }
+
+    // 🔥 ФИКС: Простой метод переподключения file upload
+    reinitializeFileUpload() {
+        const fileUpload = document.getElementById('fileUpload');
+        const fileInput = document.getElementById('fileInput');
+        
+        // Удаляем старые обработчики
+        const newFileUpload = fileUpload.cloneNode(true);
+        fileUpload.parentNode.replaceChild(newFileUpload, fileUpload);
+        
+        const newFileInput = fileInput.cloneNode(true);
+        fileInput.parentNode.replaceChild(newFileInput, fileInput);
+        
+        // Подключаем новые обработчики
+        newFileUpload.addEventListener('click', () => newFileInput.click());
+        
+        newFileUpload.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            newFileUpload.classList.add('dragover');
+        });
+        
+        newFileUpload.addEventListener('dragleave', () => {
+            newFileUpload.classList.remove('dragover');
+        });
+        
+        newFileUpload.addEventListener('drop', (e) => {
+            e.preventDefault();
+            newFileUpload.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                this.handleFileUpload(files[0]);
+            }
+        });
+        
+        newFileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                this.handleFileUpload(e.target.files[0]);
+            }
+        });
     }
 
     showDataPreview() {
@@ -302,8 +333,6 @@ class SalesForecastingApp {
             if (option) option.selected = true;
         });
         this.updateSelectedStores();
-        
-        console.log('Default selected stores:', defaultStores);
     }
 
     updateSelectedStores() {
@@ -327,22 +356,12 @@ class SalesForecastingApp {
         const learningRate = parseFloat(document.getElementById('learningRate').value);
         const epochs = parseInt(document.getElementById('epochs').value);
 
-        // Рассчитываем разделение на train/val/test
-        const trainRatio = trainSplit;
-        const valRatio = 0.15;
-        const testRatio = 1 - trainRatio - valRatio;
-
-        console.log('Training with params:', {
-            windowSize, trainRatio, valRatio, testRatio, lstmLayers, hiddenUnits, learningRate, epochs
-        });
-
         try {
-            // Prepare data
             this.trainingData = this.dataLoader.prepareSequences(
                 this.selectedStores, 
                 windowSize, 
-                trainRatio,
-                valRatio
+                trainSplit,
+                0.15
             );
 
             if (this.trainingData.trainX.length === 0) {
@@ -350,22 +369,18 @@ class SalesForecastingApp {
                 return;
             }
 
-            // Create model
             const inputShape = [windowSize, this.trainingData.featureNames.length];
             await this.lstm.createModel(inputShape, lstmLayers, hiddenUnits, learningRate);
 
-            // Show progress
             document.getElementById('trainingProgress').style.display = 'block';
             document.getElementById('trainBtn').disabled = true;
             document.getElementById('testBtn').disabled = true;
 
-            // Reset charts
             this.lossChart.data.labels = [];
             this.lossChart.data.datasets[0].data = [];
             this.lossChart.data.datasets[1].data = [];
             this.lossChart.update();
 
-            // Train model
             await this.lstm.trainModel(
                 this.trainingData.trainX,
                 this.trainingData.trainY,
@@ -378,7 +393,6 @@ class SalesForecastingApp {
                     document.getElementById('progressText').textContent = 
                         `Epoch: ${epoch}/${totalEpochs} - Loss: ${loss.toFixed(6)} - Val Loss: ${valLoss.toFixed(6)}`;
                     
-                    // Update loss chart
                     this.lossChart.data.labels.push(epoch);
                     this.lossChart.data.datasets[0].data.push(loss);
                     this.lossChart.data.datasets[1].data.push(valLoss);
@@ -408,11 +422,6 @@ class SalesForecastingApp {
             document.getElementById('testBtn').disabled = true;
             document.getElementById('testBtn').textContent = 'Testing...';
             
-            console.log('Test data info:', {
-                testSamples: this.trainingData.testX.length,
-                storesInTest: [...new Set(this.trainingData.storeIndices)]
-            });
-            
             const predictions = await this.lstm.predict(this.trainingData.testX);
             this.testResults = await this.lstm.evaluateByStore(
                 predictions,
@@ -420,8 +429,6 @@ class SalesForecastingApp {
                 this.trainingData.storeIndices
             );
 
-            console.log('Test results stores:', Object.keys(this.testResults));
-            
             this.updateRMSEChart();
             document.getElementById('exportBtn').disabled = false;
             
@@ -468,14 +475,6 @@ class SalesForecastingApp {
             this.predictionChart.data.datasets[1].data = predictedSales;
             this.predictionChart.update();
         }
-    }
-
-    countStores(storeIndices) {
-        const count = {};
-        storeIndices.forEach(storeId => {
-            count[storeId] = (count[storeId] || 0) + 1;
-        });
-        return count;
     }
 
     exportResults() {
