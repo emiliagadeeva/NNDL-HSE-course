@@ -38,7 +38,7 @@ class SalesForecastingApp {
             }
         });
 
-        // Model controls - FIXED SLIDERS
+        // Model controls
         const windowSizeSlider = document.getElementById('windowSize');
         const trainSplitSlider = document.getElementById('trainSplit');
         
@@ -174,14 +174,12 @@ class SalesForecastingApp {
 
     async handleFileUpload(file) {
         try {
-            // Show loading state
             document.getElementById('fileUpload').innerHTML = '<p>📊 Loading data...</p>';
             
             const data = await this.dataLoader.loadCSV(file);
             this.showDataPreview();
             this.populateStoreSelect();
             
-            // Reset file upload area
             document.getElementById('fileUpload').innerHTML = `
                 <p>✅ Data loaded successfully!</p>
                 <p>📁 Drag & drop another CSV file here or click to select</p>
@@ -200,7 +198,6 @@ class SalesForecastingApp {
                 <p>📁 Drag & drop CSV file here or click to select</p>
                 <input type="file" id="fileInput" accept=".csv" style="display: none;">
             `;
-            // Re-attach event listeners
             document.getElementById('fileUpload').addEventListener('click', () => document.getElementById('fileInput').click());
         }
     }
@@ -209,13 +206,8 @@ class SalesForecastingApp {
         const preview = this.dataLoader.getDataPreview(10);
         const previewTable = document.getElementById('previewTable');
         
-        if (preview.length === 0) {
-            previewTable.innerHTML = '<p>No data to display</p>';
-            return;
-        }
-        
         let html = '<table><thead><tr>';
-        Object.keys(preview[0]).forEach(key => {
+        Object.keys(preview[0] || {}).forEach(key => {
             if (key !== 'timestamp') html += `<th>${key}</th>`;
         });
         html += '</tr></thead><tbody>';
@@ -224,7 +216,6 @@ class SalesForecastingApp {
             html += '<tr>';
             Object.entries(row).forEach(([key, value]) => {
                 if (key !== 'timestamp') {
-                    // Format numbers to 2 decimal places
                     if (typeof value === 'number') {
                         value = value.toFixed(2);
                     }
@@ -246,10 +237,7 @@ class SalesForecastingApp {
         storeSelect.innerHTML = '';
         chartSelect.innerHTML = '<option value="">Select a store...</option>';
         
-        const stores = this.dataLoader.getAllStores();
-        console.log('Available stores:', stores);
-        
-        stores.forEach(storeId => {
+        this.dataLoader.getAllStores().forEach(storeId => {
             const option1 = document.createElement('option');
             option1.value = storeId;
             option1.textContent = `Store ${storeId}`;
@@ -261,7 +249,8 @@ class SalesForecastingApp {
             chartSelect.appendChild(option2);
         });
 
-        // Select first few stores by default for demo
+        // Select first few stores by default
+        const stores = this.dataLoader.getAllStores();
         if (stores.length > 0) {
             const defaultStores = stores.slice(0, Math.min(3, stores.length));
             defaultStores.forEach(storeId => {
@@ -275,7 +264,6 @@ class SalesForecastingApp {
     updateSelectedStores() {
         const selectedOptions = Array.from(document.getElementById('storeSelect').selectedOptions);
         this.selectedStores = selectedOptions.map(option => parseInt(option.value));
-        console.log('Selected stores:', this.selectedStores);
     }
 
     async trainModel() {
@@ -293,10 +281,6 @@ class SalesForecastingApp {
         const learningRate = parseFloat(document.getElementById('learningRate').value);
         const epochs = parseInt(document.getElementById('epochs').value);
 
-        console.log('Training parameters:', {
-            windowSize, trainSplit, lstmLayers, hiddenUnits, learningRate, epochs
-        });
-
         try {
             // Prepare data
             this.trainingData = this.dataLoader.prepareSequences(
@@ -304,12 +288,6 @@ class SalesForecastingApp {
                 windowSize, 
                 trainSplit
             );
-
-            console.log('Training data prepared:', {
-                trainSamples: this.trainingData.trainX.length,
-                testSamples: this.trainingData.testX.length,
-                features: this.trainingData.featureNames
-            });
 
             if (this.trainingData.trainX.length === 0) {
                 alert('Not enough data for training. Try selecting more stores or reducing window size.');
@@ -380,7 +358,6 @@ class SalesForecastingApp {
                 this.trainingData.storeIndices
             );
 
-            console.log('Test results:', this.testResults);
             this.updateRMSEChart();
             document.getElementById('exportBtn').disabled = false;
             
@@ -399,7 +376,7 @@ class SalesForecastingApp {
     updateRMSEChart() {
         if (!this.testResults) return;
 
-        // Get top 10 stores by RMSE (worst performers)
+        // Get top 10 stores by RMSE
         const topStores = Object.entries(this.testResults)
             .sort(([, a], [, b]) => b.rmse - a.rmse)
             .slice(0, 10);
@@ -407,13 +384,10 @@ class SalesForecastingApp {
         this.rmseChart.data.labels = topStores.map(([storeId]) => `Store ${storeId}`);
         this.rmseChart.data.datasets[0].data = topStores.map(([, data]) => data.rmse);
         this.rmseChart.update();
-
-        console.log('Top 10 stores by RMSE:', topStores);
     }
 
     updatePredictionChart(storeId) {
         if (!this.testResults || !storeId || !this.testResults[storeId]) {
-            // Clear chart if no data
             this.predictionChart.data.datasets[0].data = [];
             this.predictionChart.data.datasets[1].data = [];
             this.predictionChart.update();
@@ -422,9 +396,8 @@ class SalesForecastingApp {
 
         const storeData = this.testResults[storeId];
         
-        // Use the first prediction/actual pair for demonstration
         if (storeData.actuals.length > 0 && storeData.predictions.length > 0) {
-            // Denormalize sales data (multiply by 1,000,000)
+            // Denormalize sales data
             const actualSales = storeData.actuals[0].map(val => val * 1000000);
             const predictedSales = storeData.predictions[0].map(val => val * 1000000);
             
@@ -440,12 +413,9 @@ class SalesForecastingApp {
             return;
         }
 
-        let csvContent = 'Store,RMSE,Predictions (3 weeks)\n';
+        let csvContent = 'Store,RMSE\n';
         Object.entries(this.testResults).forEach(([storeId, data]) => {
-            const predictionsStr = data.predictions.map(pred => 
-                pred.map(val => (val * 1000000).toFixed(2)).join(';')
-            ).join('|');
-            csvContent += `${storeId},${data.rmse.toFixed(6)},"${predictionsStr}"\n`;
+            csvContent += `${storeId},${data.rmse.toFixed(6)}\n`;
         });
 
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
