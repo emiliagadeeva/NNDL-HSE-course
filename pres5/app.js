@@ -1,5 +1,3 @@
-[file name]: app.js
-[file content begin]
 class SalesForecastingApp {
     constructor() {
         this.dataLoader = new DataLoader();
@@ -44,10 +42,12 @@ class SalesForecastingApp {
         
         // Обработчик выбора файла
         fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0 && e.target.files[0].type === 'text/csv') {
-                this.handleFileUpload(e.target.files[0]);
-            } else if (e.target.files.length > 0) {
-                alert('Please upload a CSV file');
+            if (e.target.files.length > 0) {
+                if (e.target.files[0].type === 'text/csv') {
+                    this.handleFileUpload(e.target.files[0]);
+                } else {
+                    alert('Please upload a CSV file');
+                }
             }
         });
 
@@ -65,7 +65,7 @@ class SalesForecastingApp {
             document.getElementById('trainSplitValue').textContent = e.target.value + '%';
         });
 
-        // Инициализация значений слайдеров
+        // Инициализация значений слайдеров при загрузке
         document.getElementById('windowSizeValue').textContent = windowSizeSlider.value;
         document.getElementById('trainSplitValue').textContent = trainSplitSlider.value + '%';
 
@@ -255,18 +255,22 @@ class SalesForecastingApp {
             e.preventDefault();
             fileUpload.classList.remove('dragover');
             const files = e.dataTransfer.files;
-            if (files.length > 0 && files[0].type === 'text/csv') {
-                this.handleFileUpload(files[0]);
-            } else {
-                alert('Please upload a CSV file');
+            if (files.length > 0) {
+                if (files[0].type === 'text/csv') {
+                    this.handleFileUpload(files[0]);
+                } else {
+                    alert('Please upload a CSV file');
+                }
             }
         });
         
         fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0 && e.target.files[0].type === 'text/csv') {
-                this.handleFileUpload(e.target.files[0]);
-            } else if (e.target.files.length > 0) {
-                alert('Please upload a CSV file');
+            if (e.target.files.length > 0) {
+                if (e.target.files[0].type === 'text/csv') {
+                    this.handleFileUpload(e.target.files[0]);
+                } else {
+                    alert('Please upload a CSV file');
+                }
             }
         });
     }
@@ -541,4 +545,3 @@ document.addEventListener('DOMContentLoaded', () => {
     app = new SalesForecastingApp();
     console.log('Sales Forecasting App initialized');
 });
-[file content end]
