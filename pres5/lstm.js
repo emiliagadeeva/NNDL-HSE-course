@@ -48,60 +48,66 @@ class LSTMForecaster {
         return this.model;
     }
 
-    async trainModel(trainX, trainY, epochs = 50, validationSplit = 0.1, callback = null) {
-        if (!this.model) {
-            throw new Error('Model not created. Call createModel first.');
+    async trainModel(trainX, trainY, epochs = 50, valX = null, valY = null, callback = null) {
+    if (!this.model) {
+        throw new Error('Model not created. Call createModel first.');
+    }
+
+    tf.engine().startScope();
+    
+    this.isTraining = true;
+    this.trainingHistory = { loss: [], valLoss: [] };
+
+    try {
+        const xs = tf.tensor3d(trainX);
+        const ys = tf.tensor2d(trainY);
+
+        let valData = null;
+        if (valX && valY) {
+            valData = [tf.tensor3d(valX), tf.tensor2d(valY)];
         }
 
-        // WebGL FIX: Очищаем память перед обучением
-        tf.engine().startScope();
-        
-        this.isTraining = true;
-        this.trainingHistory = { loss: [], valLoss: [] };
+        const batchSize = 16;
 
-        try {
-            const xs = tf.tensor3d(trainX);
-            const ys = tf.tensor2d(trainY);
+        for (let epoch = 0; epoch < epochs && this.isTraining; epoch++) {
+            const history = await this.model.fit(xs, ys, {
+                epochs: 1,
+                batchSize: batchSize,
+                validationData: valData,
+                shuffle: false, // 🔥 ВАЖНО: не перемешиваем временные ряды!
+                verbose: 0
+            });
 
-            const batchSize = 16;
+            const loss = history.history.loss[0];
+            const valLoss = history.history.val_loss ? history.history.val_loss[0] : loss;
 
-            for (let epoch = 0; epoch < epochs && this.isTraining; epoch++) {
-                // WebGL FIX: Используем validationSplit вместо ручного разделения
-                const history = await this.model.fit(xs, ys, {
-                    epochs: 1,
-                    batchSize: batchSize,
-                    validationSplit: validationSplit,
-                    shuffle: true,
-                    verbose: 0
-                });
+            this.trainingHistory.loss.push(loss);
+            this.trainingHistory.valLoss.push(valLoss);
 
-                const loss = history.history.loss[0];
-                const valLoss = history.history.val_loss ? history.history.val_loss[0] : loss;
-
-                this.trainingHistory.loss.push(loss);
-                this.trainingHistory.valLoss.push(valLoss);
-
-                if (callback) {
-                    callback(epoch + 1, epochs, loss, valLoss);
-                }
-
-                // WebGL FIX: Чаще освобождаем память
-                if (epoch % 5 === 0) {
-                    await tf.nextFrame();
-                }
+            if (callback) {
+                callback(epoch + 1, epochs, loss, valLoss);
             }
 
-            xs.dispose();
-            ys.dispose();
-
-        } catch (error) {
-            console.error('Training error:', error);
-            throw error;
-        } finally {
-            tf.engine().endScope();
-            this.isTraining = false;
+            if (epoch % 5 === 0) {
+                await tf.nextFrame();
+            }
         }
+
+        xs.dispose();
+        ys.dispose();
+        if (valData) {
+            valData[0].dispose();
+            valData[1].dispose();
+        }
+
+    } catch (error) {
+        console.error('Training error:', error);
+        throw error;
+    } finally {
+        tf.engine().endScope();
+        this.isTraining = false;
     }
+}
 
     stopTraining() {
         this.isTraining = false;
