@@ -246,7 +246,10 @@ class SalesForecastingApp {
         storeSelect.innerHTML = '';
         chartSelect.innerHTML = '<option value="">Select a store...</option>';
         
-        this.dataLoader.getAllStores().forEach(storeId => {
+        const stores = this.dataLoader.getAllStores();
+        console.log('Available stores:', stores);
+        
+        stores.forEach(storeId => {
             const option1 = document.createElement('option');
             option1.value = storeId;
             option1.textContent = `Store ${storeId}`;
@@ -258,21 +261,21 @@ class SalesForecastingApp {
             chartSelect.appendChild(option2);
         });
 
-        // Select first few stores by default
-        const stores = this.dataLoader.getAllStores();
-        if (stores.length > 0) {
-            const defaultStores = stores.slice(0, Math.min(3, stores.length));
-            defaultStores.forEach(storeId => {
-                const option = Array.from(storeSelect.options).find(opt => parseInt(opt.value) === storeId);
-                if (option) option.selected = true;
-            });
-            this.updateSelectedStores();
-        }
+        // 🔥 ФИКС: Выбираем больше магазинов по умолчанию
+        const defaultStores = stores.slice(0, Math.min(8, stores.length));
+        defaultStores.forEach(storeId => {
+            const option = Array.from(storeSelect.options).find(opt => parseInt(opt.value) === storeId);
+            if (option) option.selected = true;
+        });
+        this.updateSelectedStores();
+        
+        console.log('Default selected stores:', defaultStores);
     }
 
     updateSelectedStores() {
         const selectedOptions = Array.from(document.getElementById('storeSelect').selectedOptions);
         this.selectedStores = selectedOptions.map(option => parseInt(option.value));
+        console.log('Currently selected stores:', this.selectedStores);
     }
 
     async trainModel() {
@@ -360,6 +363,12 @@ class SalesForecastingApp {
             document.getElementById('testBtn').disabled = true;
             document.getElementById('testBtn').textContent = 'Testing...';
             
+            console.log('Test data info:', {
+                testSamples: this.trainingData.testX.length,
+                storesInTest: [...new Set(this.trainingData.storeIndices)],
+                storeDistribution: this.countStores(this.trainingData.storeIndices)
+            });
+            
             const predictions = await this.lstm.predict(this.trainingData.testX);
             this.testResults = await this.lstm.evaluateByStore(
                 predictions,
@@ -367,13 +376,15 @@ class SalesForecastingApp {
                 this.trainingData.storeIndices
             );
 
+            console.log('Test results stores:', Object.keys(this.testResults));
+            
             this.updateRMSEChart();
             document.getElementById('exportBtn').disabled = false;
             
             document.getElementById('testBtn').disabled = false;
             document.getElementById('testBtn').textContent = '🧪 Test Model';
             
-            alert('✅ Model testing completed!');
+            alert(`✅ Model testing completed! Evaluated ${Object.keys(this.testResults).length} stores`);
         } catch (error) {
             console.error('Testing error:', error);
             alert('❌ Error testing model: ' + error.message);
@@ -385,14 +396,19 @@ class SalesForecastingApp {
     updateRMSEChart() {
         if (!this.testResults) return;
 
-        // Get top 10 stores by RMSE
-        const topStores = Object.entries(this.testResults)
-            .sort(([, a], [, b]) => b.rmse - a.rmse)
-            .slice(0, 10);
+        // 🔥 ФИКС: Показываем все магазины из результатов
+        const allStores = Object.entries(this.testResults)
+            .sort(([, a], [, b]) => b.rmse - a.rmse);
 
-        this.rmseChart.data.labels = topStores.map(([storeId]) => `Store ${storeId}`);
-        this.rmseChart.data.datasets[0].data = topStores.map(([, data]) => data.rmse);
+        // Ограничиваем максимум 10 магазинами для читаемости
+        const displayStores = allStores.slice(0, Math.min(10, allStores.length));
+        
+        this.rmseChart.data.labels = displayStores.map(([storeId]) => `Store ${storeId}`);
+        this.rmseChart.data.datasets[0].data = displayStores.map(([, data]) => data.rmse);
         this.rmseChart.update();
+
+        console.log('All stores in results:', allStores.map(([storeId]) => storeId));
+        console.log('RMSE values:', allStores.map(([, data]) => data.rmse));
     }
 
     updatePredictionChart(storeId) {
@@ -406,7 +422,7 @@ class SalesForecastingApp {
         const storeData = this.testResults[storeId];
         
         if (storeData.actuals.length > 0 && storeData.predictions.length > 0) {
-            // Денормализация данных продаж (умножаем на 1,000,000)
+            // Денормализация данных продаж
             const actualSales = storeData.actuals[0].map(val => val * 1000000);
             const predictedSales = storeData.predictions[0].map(val => val * 1000000);
             
@@ -427,20 +443,4 @@ class SalesForecastingApp {
             csvContent += `${storeId},${data.rmse.toFixed(6)}\n`;
         });
 
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `sales_forecast_results_${new Date().toISOString().split('T')[0]}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-    }
-}
-
-// Initialize app when page loads
-let app;
-document.addEventListener('DOMContentLoaded', () => {
-    app = new SalesForecastingApp();
-});
+        const blob = new Blob([csvContent
