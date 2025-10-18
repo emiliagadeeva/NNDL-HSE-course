@@ -1,3 +1,5 @@
+
+
 [file name]: lstm.js
 [file content begin]
 class LSTMForecaster {
@@ -184,4 +186,3 @@ class LSTMForecaster {
     }
 }
 [file content end]
-
