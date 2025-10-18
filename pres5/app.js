@@ -388,22 +388,23 @@ class SalesForecastingApp {
             this.lossChart.data.datasets[1].data = [];
             this.lossChart.update();
 
-            // Train model
+            // Train model with validation data
             await this.lstm.trainModel(
                 this.trainingData.trainX,
                 this.trainingData.trainY,
                 epochs,
-                0.1,
+                this.trainingData.valX,  // validation data
+                this.trainingData.valY,
                 (epoch, totalEpochs, loss, valLoss) => {
                     const progress = (epoch / totalEpochs) * 100;
                     document.getElementById('progressFill').style.width = progress + '%';
                     document.getElementById('progressText').textContent = 
-                        `Epoch: ${epoch}/${totalEpochs} - Loss: ${loss.toFixed(6)}`;
+                        `Epoch: ${epoch}/${totalEpochs} - Loss: ${loss.toFixed(6)} - Val Loss: ${valLoss.toFixed(6)}`;
                     
                     // Update loss chart
                     this.lossChart.data.labels.push(epoch);
                     this.lossChart.data.datasets[0].data.push(loss);
-                    this.lossChart.data.datasets[1].data.push(valLoss || loss);
+                    this.lossChart.data.datasets[1].data.push(valLoss);
                     this.lossChart.update();
                 }
             );
