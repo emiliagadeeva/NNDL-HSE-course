@@ -31,11 +31,17 @@ class DataLoader {
 
     parseCSV(csvText) {
         const lines = csvText.split('\n').filter(line => line.trim());
+        if (lines.length === 0) {
+            throw new Error('CSV file is empty');
+        }
+        
         const headers = lines[0].split(',').map(h => h.trim());
         
         const data = [];
         for (let i = 1; i < lines.length; i++) {
             const values = lines[i].split(',');
+            if (values.length !== headers.length) continue;
+            
             const row = {};
             
             headers.forEach((header, index) => {
@@ -158,8 +164,8 @@ class DataLoader {
         return {
             holidayWeeks: holidayWeeks.length,
             nonHolidayWeeks: nonHolidayWeeks.length,
-            avgHolidaySales: holidaySales.reduce((a, b) => a + b, 0) / holidaySales.length,
-            avgNonHolidaySales: nonHolidaySales.reduce((a, b) => a + b, 0) / nonHolidaySales.length
+            avgHolidaySales: holidaySales.length > 0 ? holidaySales.reduce((a, b) => a + b, 0) / holidaySales.length : 0,
+            avgNonHolidaySales: nonHolidaySales.length > 0 ? nonHolidaySales.reduce((a, b) => a + b, 0) / nonHolidaySales.length : 0
         };
     }
 
