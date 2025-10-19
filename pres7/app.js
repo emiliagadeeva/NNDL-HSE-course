@@ -325,7 +325,7 @@ class SalesForecastingApp {
         });
 
         // Выбираем больше магазинов по умолчанию
-        const defaultStores = stores.slice(0, Math.min(45, stores.length));
+        const defaultStores = stores.slice(0, Math.min(5, stores.length));
         defaultStores.forEach(storeId => {
             const option = Array.from(storeSelect.options).find(opt => parseInt(opt.value) === storeId);
             if (option) option.selected = true;
