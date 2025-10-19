@@ -91,7 +91,7 @@ class SalesForecastingApp {
                 labels: [],
                 datasets: [
                     {
-                        label: 'Training Loss',
+                        label: 'Validation Loss',
                         borderColor: '#007bff',
                         backgroundColor: 'rgba(0, 123, 255, 0.1)',
                         data: [],
@@ -99,7 +99,7 @@ class SalesForecastingApp {
                         tension: 0.4
                     },
                     {
-                        label: 'Validation Loss',
+                        label: 'Training Loss',
                         borderColor: '#28a745',
                         backgroundColor: 'rgba(40, 167, 69, 0.1)',
                         data: [],
