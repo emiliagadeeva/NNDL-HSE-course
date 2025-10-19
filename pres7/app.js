@@ -205,10 +205,7 @@ class SalesForecastingApp {
             console.log('Data loaded successfully');
             
             this.showDataPreview();
-            // this.populateStoreSelect();
-            const allStores = this.dataLoader.getAllStores();
-            this.selectedStores = allStores;
-            console.log('Automatically selected all stores:', allStores);
+            this.populateStoreSelect();
             
             // Восстанавливаем оригинальный HTML
             document.getElementById('fileUpload').innerHTML = `
